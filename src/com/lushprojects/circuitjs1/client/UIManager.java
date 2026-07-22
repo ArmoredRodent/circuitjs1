@@ -110,6 +110,7 @@ public class UIManager {
 	boolean convention = true;
 	boolean euroRes = false;
 	boolean usRes = false;
+	boolean showOhm = false;
 	boolean running = true;
 	boolean hideSidebar = false;
 	boolean noEditing = false;
@@ -132,6 +133,7 @@ public class UIManager {
 	    euroRes = qp.getBooleanValue("euroResistors", false);
 	    euroGates = qp.getBooleanValue("IECGates", getOptionFromStorage("euroGates", Locale.weAreInGermany()));
 	    usRes = qp.getBooleanValue("usResistors",  false);
+	    showOhm = qp.getBooleanValue("showOhm", getOptionFromStorage("showOhm", false));
 	    running = qp.getBooleanValue("running", true);
 	    hideSidebar = qp.getBooleanValue("hideSidebar", false);
 	    hideMenu = qp.getBooleanValue("hideMenu", false);
