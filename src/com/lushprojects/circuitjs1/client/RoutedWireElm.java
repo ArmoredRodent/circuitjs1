@@ -37,6 +37,10 @@ import com.google.gwt.xml.client.Element;
 	int getDumpType() { return 0; }
 	String getXmlDumpType() { return "rw"; }
 
+	// RoutedWireElm routes around other elements' posts rather than splitting to
+	// connect to them, so don't auto-split like a plain WireElm would.
+	void draggingDone() {}
+
 	void dumpXml(Document doc, Element elem) {
 	    super.dumpXml(doc, elem);
 	    if (routePoints != null && routePoints.size() > 0) {

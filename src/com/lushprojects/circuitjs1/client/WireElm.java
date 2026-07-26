@@ -20,6 +20,8 @@
 package com.lushprojects.circuitjs1.client;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 
     class WireElm extends CircuitElm {
 	int busWidth = 1;
@@ -235,6 +237,81 @@ import java.util.ArrayList;
 	    newWire.drag(x2, y2);
 	    drag(px, py);
 	    return newWire;
+	}
+
+	// True if some other 2-terminal element already connects (ax,ay) directly to
+	// (bx,by). Used to avoid laying a redundant parallel wire segment on top of
+	// an existing colinear element, which would create an electrical loop.
+	boolean hasDirectConnection(int ax, int ay, int bx, int by) {
+	    for (CircuitElm ce : UIManager.theUI.elmList) {
+		if (ce == this || ce.getPostCount() != 2)
+		    continue;
+		Point p0 = ce.getPost(0);
+		Point p1 = ce.getPost(1);
+		if ((p0.x == ax && p0.y == ay && p1.x == bx && p1.y == by) ||
+		    (p0.x == bx && p0.y == by && p1.x == ax && p1.y == ay))
+		    return true;
+	    }
+	    return false;
+	}
+
+	// After a plain wire is newly drawn, split it at any point where another
+	// element's post lies in its interior, so it connects there instead of just
+	// crossing over it. (RoutedWireElm overrides this to do nothing, since it
+	// routes around such posts instead of through them.) Any sub-segment that
+	// would duplicate an existing colinear element (both endpoints of that
+	// element lying on the new wire) is dropped instead of added, since adding
+	// it would just create a parallel loop.
+	void draggingDone() {
+	    // postDrawList holds the points (as of the last analysis, i.e. before this wire)
+	    // where a dot is drawn: dead ends and real junctions, but not plain pass-through
+	    // connections between two elements. Only split at those, so we don't tap into
+	    // an already-connected pair that isn't meant to be a distinct node.
+	    ArrayList<Point> splitPoints = new ArrayList<Point>();
+	    for (Point p : CirSim.theApp.postDrawList) {
+		if (pointOnSegmentInterior(x, y, x2, y2, p.x, p.y))
+		    splitPoints.add(p);
+	    }
+	    if (splitPoints.isEmpty())
+		return;
+	    final int x0 = x, y0 = y;
+	    Collections.sort(splitPoints, new Comparator<Point>() {
+		public int compare(Point a, Point b) {
+		    long da = (long)(a.x-x0)*(a.x-x0) + (long)(a.y-y0)*(a.y-y0);
+		    long db = (long)(b.x-x0)*(b.x-x0) + (long)(b.y-y0)*(b.y-y0);
+		    return (da < db) ? -1 : ((da > db) ? 1 : 0);
+		}
+	    });
+	    // full ordered list of boundary points: original endpoints plus dedup'd splits
+	    ArrayList<Point> pts = new ArrayList<Point>();
+	    pts.add(new Point(x, y));
+	    for (Point p : splitPoints) {
+		Point last = pts.get(pts.size() - 1);
+		if (p.x != last.x || p.y != last.y)
+		    pts.add(p);
+	    }
+	    Point last = pts.get(pts.size() - 1);
+	    if (last.x != x2 || last.y != y2)
+		pts.add(new Point(x2, y2));
+
+	    boolean first = true;
+	    for (int i = 0; i < pts.size() - 1; i++) {
+		Point a = pts.get(i);
+		Point b = pts.get(i + 1);
+		if (hasDirectConnection(a.x, a.y, b.x, b.y))
+		    continue;
+		if (first) {
+		    x = a.x; y = a.y;
+		    drag(b.x, b.y);
+		    first = false;
+		} else {
+		    WireElm seg = new WireElm(a.x, a.y);
+		    seg.drag(b.x, b.y);
+		    UIManager.theUI.elmList.addElement(seg);
+		}
+	    }
+	    if (first)
+		UIManager.theUI.elmList.remove(this);
 	}
 
 	int getMouseDistance(int gx, int gy) {
