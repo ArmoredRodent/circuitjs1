@@ -216,10 +216,10 @@ import com.google.gwt.xml.client.Element;
 	int parseNumber(String str) {
 	    if (str.startsWith("0x"))
 		return Integer.parseInt(str.substring(2), 16);
-	    if (str.startsWith("0b"))
-		return Integer.parseInt(str.substring(2), 2);
 	    if (hasFlag(FLAG_HEX_DISPLAY))
 		return Integer.parseInt(str, 16);
+	    if (str.startsWith("0b"))
+		return Integer.parseInt(str.substring(2), 2);
 	    return Integer.parseInt(str);
 	}
 
