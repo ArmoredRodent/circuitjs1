@@ -26,6 +26,7 @@ import com.google.gwt.xml.client.Document;
 
     class DeMultiplexerElm extends ChipElm {
 	final int FLAG_BUS_SELECT = 1<<3;
+	final int FLAG_INVERT_OUTPUTS = 1<<4;
 
 	// outputMode: 0 = single input, individual outputs (original)
 	//             1 = single input, bus output (bit distributor)
@@ -44,6 +45,7 @@ import com.google.gwt.xml.client.Document;
 
 	boolean hasReset() {return false;}
 	boolean busSelect() { return hasFlag(FLAG_BUS_SELECT); }
+	boolean invertOutputs() { return hasFlag(FLAG_INVERT_OUTPUTS); }
 
 	public DeMultiplexerElm(int xx, int yy) { super(xx, yy); }
 	public DeMultiplexerElm(int xa, int ya, int xb, int yb, int f,
@@ -216,25 +218,16 @@ import com.google.gwt.xml.client.Document;
 	void execute() {
 	    int selectedValue = readSelectValue();
 
-	    if (outputMode == OUTPUT_MODE_BUS_BUS) {
-		// clear all outputs, then copy input bus to selected output group
-		for (int g = 0; g < outputCount; g++)
-		    for (int i = 0; i < dataBusWidth; i++)
-			pins[outputPin + g * dataBusWidth + i].value = false;
-		for (int i = 0; i < dataBusWidth; i++)
-		    pins[outputPin + selectedValue * dataBusWidth + i].value = pins[inputPin + i].value;
+	    // clear all outputs, then copy input (bus) to selected output (group)
+	    int width = (outputMode == OUTPUT_MODE_BUS_BUS) ? dataBusWidth : 1;
+	    for (int i = 0; i < outputCount*width; i++)
+		pins[outputPin + i].value = false;
+	    for (int i = 0; i < width; i++)
+		pins[outputPin + selectedValue * width + i].value = pins[inputPin + i].value;
 
-	    } else if (outputMode == OUTPUT_MODE_BUS_BIT) {
-		// clear all output bits, then set selected bit to input value
-		for (int i = 0; i < outputCount; i++)
-		    pins[outputPin + i].value = false;
-		pins[outputPin + selectedValue].value = pins[inputPin].value;
-
-	    } else {
-		// mode 0: original behavior
-		for (int i = 0; i < outputCount; i++)
-		    pins[outputPin + i].value = false;
-		pins[outputPin + selectedValue].value = pins[inputPin].value;
+	    if (invertOutputs()) {
+		for (int i = 0; i < outputCount*width; i++)
+		    pins[outputPin + i].value = !pins[outputPin + i].value;
 	    }
 	}
 
@@ -255,7 +248,9 @@ import com.google.gwt.xml.client.Document;
 	    }
 	    if (n == 2)
 		return EditInfo.createCheckbox("Bus Select", busSelect());
-	    if (n == 3 && outputMode == OUTPUT_MODE_BUS_BUS)
+	    if (n == 3)
+		return EditInfo.createCheckbox("Invert Outputs", invertOutputs());
+	    if (n == 4 && outputMode == OUTPUT_MODE_BUS_BUS)
 		return new EditInfo("Data Bus Width", dataBusWidth, 2, 32).setDimensionless();
 	    return null;
 	}
@@ -279,6 +274,9 @@ import com.google.gwt.xml.client.Document;
 		setPoints();
 	    }
 	    if (n == 3) {
+		flags = ei.changeFlag(flags, FLAG_INVERT_OUTPUTS);
+	    }
+	    if (n == 4) {
 		if (ei.value >= 2) {
 		    dataBusWidth = (int) ei.value;
 		    setupPins();
