@@ -125,10 +125,10 @@ import java.util.Comparator;
 		int value = getBusValue();
 		arr[1] = "value = " + value;
 		arr[2] = "hex = 0x" + Integer.toHexString(value).toUpperCase();
-		String label = LabeledNodeElm.getLabelForNode(getNode(0).index);
+		String label = LabeledNodeElm.getLabelForNode(getNode(0));
 		if (label != null) {
 		    for (int i = 1; i < busWidth; i++) {
-			if (!label.equals(LabeledNodeElm.getLabelForNode(getNode(i).index))) {
+			if (!label.equals(LabeledNodeElm.getLabelForNode(getNode(i)))) {
 			    label = null;
 			    break;
 			}
@@ -139,7 +139,7 @@ import java.util.Comparator;
 	    } else {
 		arr[1] = "I = " + getCurrentDText(getCurrent());
 		arr[2] = "V = " + getVoltageText(volts[0]);
-		String label = LabeledNodeElm.getLabelForNode(getNode(0).index);
+		String label = LabeledNodeElm.getLabelForNode(getNode(0));
 		if (label != null)
 		    arr[3] = label;
 	    }

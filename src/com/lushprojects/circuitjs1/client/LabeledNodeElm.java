@@ -155,10 +155,11 @@ class LabeledNodeElm extends CircuitElm {
 	return le.node;
     }
 
-    // find label text for the given node number, if any (used to show label in getInfo() for wires)
-    static String getLabelForNode(int node) {
-	if (labelList == null)
+    // find label text for the given node, if any (used to show label in getInfo() for wires)
+    static String getLabelForNode(CircuitNode cn) {
+	if (labelList == null || cn == null)
 	    return null;
+	int node = cn.index;
 	for (java.util.Map.Entry<String,LabelEntry> e : labelList.entrySet()) {
 	    if (e.getValue().node == node) {
 		String key = e.getKey();
