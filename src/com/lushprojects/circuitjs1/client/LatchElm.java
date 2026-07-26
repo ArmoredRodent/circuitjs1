@@ -27,9 +27,11 @@ class LatchElm extends ChipElm {
     // enable mode stored in bits 5-6: 0=none, 1=one each, 2=two each
     final int FLAG_ENABLE_MASK = 32 | 64;
     final int FLAG_ENABLE_SHIFT = 5;
+    final int FLAG_RESET_INVERT = 128;
 
     boolean hasReset() { return (flags & FLAG_RESET) != 0; }
     boolean hasSet() { return (flags & FLAG_SET) != 0; }
+    boolean resetActiveLow() { return (flags & FLAG_RESET_INVERT) != 0; }
     int enableMode() { return (flags & FLAG_ENABLE_MASK) >> FLAG_ENABLE_SHIFT; }
     int inputEnableCount() { return enableMode(); }
     int outputEnableCount() { return enableMode(); }
@@ -79,8 +81,10 @@ class LatchElm extends ChipElm {
 
 	pins[loadPin = pinIndex++] = new Pin(leftPos++, SIDE_W, isEdgeTriggered() ? "" : "Ld");
 	pins[loadPin].clock = isEdgeTriggered();
-	if (hasReset())
+	if (hasReset()) {
 	    pins[resetPin = pinIndex++] = new Pin(leftPos++, SIDE_W, "R");
+	    pins[resetPin].lineOver = resetActiveLow();
+	}
 	if (hasSet())
 	    pins[setPin = pinIndex++] = new Pin(leftPos++, SIDE_W, "S");
 	rightPos = leftPos;
@@ -145,7 +149,7 @@ class LatchElm extends ChipElm {
 	    lastLoad = pins[loadPin].value;
 	    return;
 	}
-	if (hasReset() && pins[resetPin].value) {
+	if (hasReset() && (pins[resetPin].value != resetActiveLow())) {
 	    for (int i = 0; i != bits; i++)
 		outputValues[i] = false;
 	    lastLoad = pins[loadPin].value;
@@ -267,6 +271,8 @@ class LatchElm extends ChipElm {
 	    ei.choice.select(enableMode());
 	    return ei;
 	}
+	if (n == 5 && hasReset())
+	    return EditInfo.createCheckbox("Invert Reset", resetActiveLow());
 	return null;
     }
 
@@ -289,6 +295,7 @@ class LatchElm extends ChipElm {
 	    setupPins();
 	    allocNodes();
 	    setPoints();
+	    ei.newDialog = true;
 	}
 	if (n == 3) {
 	    flags = ei.changeFlag(flags, FLAG_SET);
@@ -301,6 +308,11 @@ class LatchElm extends ChipElm {
 	    flags = (flags & ~FLAG_ENABLE_MASK) | (mode << FLAG_ENABLE_SHIFT);
 	    setupPins();
 	    allocNodes();
+	    setPoints();
+	}
+	if (n == 5) {
+	    flags = ei.changeFlag(flags, FLAG_RESET_INVERT);
+	    setupPins();
 	    setPoints();
 	}
     }
