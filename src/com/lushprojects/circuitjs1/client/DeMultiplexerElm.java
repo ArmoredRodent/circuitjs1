@@ -218,17 +218,13 @@ import com.google.gwt.xml.client.Document;
 	void execute() {
 	    int selectedValue = readSelectValue();
 
-	    // clear all outputs, then copy input (bus) to selected output (group)
+	    // set inactive outputs to idle level, then copy input (bus) to selected output (group)
 	    int width = (outputMode == OUTPUT_MODE_BUS_BUS) ? dataBusWidth : 1;
+	    boolean idle = invertOutputs();
 	    for (int i = 0; i < outputCount*width; i++)
-		pins[outputPin + i].value = false;
+		pins[outputPin + i].value = idle;
 	    for (int i = 0; i < width; i++)
 		pins[outputPin + selectedValue * width + i].value = pins[inputPin + i].value;
-
-	    if (invertOutputs()) {
-		for (int i = 0; i < outputCount*width; i++)
-		    pins[outputPin + i].value = !pins[outputPin + i].value;
-	    }
 	}
 
 	int getDumpType() { return 185; }
@@ -249,7 +245,7 @@ import com.google.gwt.xml.client.Document;
 	    if (n == 2)
 		return EditInfo.createCheckbox("Bus Select", busSelect());
 	    if (n == 3)
-		return EditInfo.createCheckbox("Invert Outputs", invertOutputs());
+		return EditInfo.createCheckbox("Keep Inactive Outputs High (74139)", invertOutputs());
 	    if (n == 4 && outputMode == OUTPUT_MODE_BUS_BUS)
 		return new EditInfo("Data Bus Width", dataBusWidth, 2, 32).setDimensionless();
 	    return null;
