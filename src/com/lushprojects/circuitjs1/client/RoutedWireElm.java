@@ -68,6 +68,15 @@ import com.google.gwt.xml.client.Element;
 	    } catch (Exception e) {}
 	}
 
+	@Override
+	void move(int dx, int dy) {
+	    if (routePoints != null) {
+		for (Point p : routePoints)
+		    p.move(dx, dy);
+	    }
+	    super.move(dx, dy);
+	}
+
 	int getShortcut() { return 'W'; }
 
 	void setPoints() {
