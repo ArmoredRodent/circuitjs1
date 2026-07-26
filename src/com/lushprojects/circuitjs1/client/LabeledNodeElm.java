@@ -69,7 +69,7 @@ class LabeledNodeElm extends CircuitElm {
 
     class LabelEntry {
 	Point point;
-	int node;
+	CircuitNode node;
     }
 
     static HashMap<String,LabelEntry> labelList;
@@ -118,7 +118,7 @@ class LabeledNodeElm extends CircuitElm {
 	String key = (busWidth > 1) ? text + ":" + p : text;
 	LabelEntry le = labelList.get(key);
 	if (le != null) // should never happen
-	    le.node = n.index;
+	    le.node = n;
     }
     
     int getDumpType() { return 207; }
@@ -146,7 +146,7 @@ class LabeledNodeElm extends CircuitElm {
     boolean isRemovableWire() { return true; }
     boolean getConnection(int n1, int n2) { return n1 == n2; }
     
-    static Integer getByName(String n) {
+    static CircuitNode getByName(String n) {
 	if (labelList == null)
 	    return null;
 	LabelEntry le = labelList.get(n);
@@ -159,9 +159,8 @@ class LabeledNodeElm extends CircuitElm {
     static String getLabelForNode(CircuitNode cn) {
 	if (labelList == null || cn == null)
 	    return null;
-	int node = cn.index;
 	for (java.util.Map.Entry<String,LabelEntry> e : labelList.entrySet()) {
-	    if (e.getValue().node == node) {
+	    if (e.getValue().node == cn) {
 		String key = e.getKey();
 		int ci = key.lastIndexOf(':');
 		return (ci < 0) ? key : key.substring(0, ci);

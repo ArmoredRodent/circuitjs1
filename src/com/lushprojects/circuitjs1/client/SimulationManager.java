@@ -1844,11 +1844,10 @@ public class SimulationManager {
     }
     
     double getLabeledNodeVoltage(String name) {
-	Integer node = LabeledNodeElm.getByName(name);
-	if (node == null || node == 0)
+	CircuitNode cn = LabeledNodeElm.getByName(name);
+	if (cn == null || cn.index == 0)
 	    return 0;
-	CircuitNode cn = getCircuitNode(node.intValue());
-	if (cn == null || cn.matrix == null)
+	if (cn.matrix == null)
 	    return 0;
 	return cn.matrix.nodeVoltages[cn.row-1];
     }
