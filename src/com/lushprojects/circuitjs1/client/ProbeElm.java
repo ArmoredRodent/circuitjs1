@@ -43,7 +43,8 @@ class ProbeElm extends CircuitElm {
     final int TP_PER = 7;
     final int TP_PWI = 8;
     final int TP_DUT = 9; //mark to space ratio
-    
+    final int TP_AVG = 10;
+
     public ProbeElm(int xx, int yy) { super(xx, yy);
     	meter = TP_VOL;
     	
@@ -88,6 +89,7 @@ class ProbeElm extends CircuitElm {
         super.reset();
         zerocount = 0;
         rmsV = total = count = 0;
+        avgV = totalV = 0;
         maxV = lastMaxV = 0;
         minV = lastMinV = 0;
         binaryLevel = 0;
@@ -106,6 +108,8 @@ class ProbeElm extends CircuitElm {
             return "V";
         case TP_RMS:
             return "V(rms)";
+        case TP_AVG:
+            return "V(avg)";
         case TP_MAX:
             return "Vmax";
         case TP_MIN:
@@ -125,8 +129,9 @@ class ProbeElm extends CircuitElm {
         }
         return "";
     }
-    
+
     double rmsV=0, total, count;
+    double avgV=0, totalV;
     double binaryLevel=0;//0 or 1 - double because we only pass doubles back to the web page
     int zerocount=0;
     double maxV=0, lastMaxV;
@@ -182,6 +187,9 @@ class ProbeElm extends CircuitElm {
 	                break;
 	            case TP_RMS:
 	                s = getUnitTextWithScale(rmsV,"V(rms)", scale);
+	                break;
+	            case TP_AVG:
+	                s = getUnitTextWithScale(avgV,"V(avg)", scale);
 	                break;
 	            case TP_MAX:
 	                s = getUnitTextWithScale(lastMaxV,"Vpk", scale);
@@ -242,6 +250,7 @@ class ProbeElm extends CircuitElm {
         count++;//how many counts are in a cycle
         double v = getVoltageDiff();
         total += v*v; //sum of squares
+        totalV += v;
 
         // binary threshold is a fixed 2.5V (assumes ~5V logic levels); not scaled to the circuit's actual voltage range
         if (v<2.5)
@@ -282,9 +291,13 @@ class ProbeElm extends CircuitElm {
             rmsV = Math.sqrt(total);
             if (Double.isNaN(rmsV))
                 rmsV=0;
+            avgV = totalV/count;
+            if (Double.isNaN(avgV))
+                avgV=0;
             count=0;
             total=0;
-            
+            totalV=0;
+
         }
         if (v<minV && decreasingV){ //V going down, track minimum value with V
             minV=v;
@@ -304,10 +317,13 @@ class ProbeElm extends CircuitElm {
             rmsV = Math.sqrt(total);
             if (Double.isNaN(rmsV))
                 rmsV=0;
+            avgV = totalV/count;
+            if (Double.isNaN(avgV))
+                avgV=0;
             count=0;
             total=0;
+            totalV=0;
 
-            
         }
         //need to zero the rms value if it stays at 0 for a while
         if (v==0){
@@ -315,6 +331,7 @@ class ProbeElm extends CircuitElm {
             if (zerocount > 5){
                 total=0;
                 rmsV=0;
+                avgV=0;
                 maxV=0;
                 minV=0;
             }
@@ -337,13 +354,14 @@ class ProbeElm extends CircuitElm {
         int i = 1;
         arr[i++] = getMeterLine(meter);
         // show the rest of the already-tracked values too, skipping whichever one is selected above.
-        // frequency is left out here because it isn't actually computed anywhere (see getMeterLine)
+        // frequency is left out here because it isn't actually computed anywhere (see getMeterLine);
+        // binary value is left out to make room for average, since arr[] only has room for 10 entries total
         if (meter != TP_VOL) arr[i++] = getMeterLine(TP_VOL);
         if (meter != TP_MAX) arr[i++] = getMeterLine(TP_MAX);
         if (meter != TP_MIN) arr[i++] = getMeterLine(TP_MIN);
         if (meter != TP_RMS) arr[i++] = getMeterLine(TP_RMS);
+        if (meter != TP_AVG) arr[i++] = getMeterLine(TP_AVG);
         if (meter != TP_P2P) arr[i++] = getMeterLine(TP_P2P);
-        if (meter != TP_BIN) arr[i++] = getMeterLine(TP_BIN);
         if (meter != TP_PER) arr[i++] = getMeterLine(TP_PER);
         if (meter != TP_PWI) arr[i++] = getMeterLine(TP_PWI);
         if (meter != TP_DUT) arr[i++] = getMeterLine(TP_DUT);
@@ -355,6 +373,8 @@ class ProbeElm extends CircuitElm {
                 return "Vd = " + getVoltageText(getVoltageDiff());
             case TP_RMS:
                 return "V(rms) = " + getVoltageText(rmsV);
+            case TP_AVG:
+                return "V(avg) = " + getVoltageText(avgV);
             case TP_MAX:
                 return "Vmax = " + getVoltageText(lastMaxV);
             case TP_MIN:
@@ -387,15 +407,18 @@ class ProbeElm extends CircuitElm {
             ei.choice = new Choice();
             ei.choice.add("Voltage");
             ei.choice.add("RMS Voltage");
+            ei.choice.add("Average Voltage");
             ei.choice.add("Max Voltage");
             ei.choice.add("Min Voltage");
             ei.choice.add("P2P Voltage");
-            ei.choice.add("Binary Value");        
+            ei.choice.add("Binary Value");
             //ei.choice.add("Frequency");
             //ei.choice.add("Period");
             //ei.choice.add("Pulse Width");
             //ei.choice.add("Duty Cycle");
-            ei.choice.select(meter);
+            // TP_AVG's value isn't contiguous with the other meter constants shown here (it was
+            // appended after TP_DUT to avoid renumbering saved circuits), so map it explicitly.
+            ei.choice.select(meterChoiceIndex(meter));
             return ei;
         }
         if (n == 2) {
@@ -418,6 +441,17 @@ class ProbeElm extends CircuitElm {
         return null;
     }
 
+    int[] meterChoices() {
+	return new int[] { TP_VOL, TP_RMS, TP_AVG, TP_MAX, TP_MIN, TP_P2P, TP_BIN };
+    }
+    int meterChoiceIndex(int m) {
+	int[] choices = meterChoices();
+	for (int i = 0; i != choices.length; i++)
+	    if (choices[i] == m)
+		return i;
+	return 0;
+    }
+
     public void setEditValue(int n, EditInfo ei) {
 	if (n == 0) {
 	    if (ei.checkbox.getState())
@@ -426,7 +460,7 @@ class ProbeElm extends CircuitElm {
 		flags &= ~FLAG_SHOWVOLTAGE;
 	}
         if (n==1){
-            meter = ei.choice.getSelectedIndex();
+            meter = meterChoices()[ei.choice.getSelectedIndex()];
         }
         if (n == 2)
             scale = ei.choice.getSelectedIndex();
