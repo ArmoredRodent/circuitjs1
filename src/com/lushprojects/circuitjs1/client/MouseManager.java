@@ -1038,6 +1038,12 @@ public class MouseManager implements MouseDownHandler, MouseMoveHandler, MouseUp
 
     public void onMouseOut(MouseOutEvent e) {
     	mouseCursorX=-1;
+    	// if the mouse leaves the canvas while dragging (e.g. dragged off the edge of the
+    	// browser window), we may never get a mouseup event, so end the drag now instead of
+    	// getting stuck thinking we're still dragging (which for MODE_DRAG_ALL would mean
+    	// the view keeps panning as the mouse moves, even after the button is released).
+    	if (mouseDragging)
+    	    endDrag();
     }
 
     void clearMouseElm() {
@@ -1224,9 +1230,6 @@ public class MouseManager implements MouseDownHandler, MouseMoveHandler, MouseUp
 
     public void onMouseUp(MouseUpEvent e) {
     	e.preventDefault();
-    	mouseDragging=false;
-    	Scope.dragStartTime = -1;
-    	Scope.endDragPlotY();
 
     	// click to clear selection (but not on a right-click, e.g. from a context-menu mouseup)
     	if (tempMouseMode == MODE_SELECT && selectedArea == null && e.getNativeButton() == NativeEvent.BUTTON_LEFT)
@@ -1235,6 +1238,15 @@ public class MouseManager implements MouseDownHandler, MouseMoveHandler, MouseUp
     	// cmd-click = split wire
     	if (tempMouseMode == MODE_DRAG_POST && draggingPost == -1)
     	    doSplit(mouseElm);
+
+    	endDrag();
+    }
+
+    // common cleanup for ending a drag, whether via mouseup or the mouse leaving the canvas
+    void endDrag() {
+    	mouseDragging=false;
+    	Scope.dragStartTime = -1;
+    	Scope.endDragPlotY();
 
     	tempMouseMode = mouseMode;
     	selectedArea = null;
