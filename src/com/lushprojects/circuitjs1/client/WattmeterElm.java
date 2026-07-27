@@ -30,10 +30,9 @@ class WattmeterElm extends CircuitElm {
     int meter; // 0=instantaneous, 1=average
     final int PM_INST = 0;
     final int PM_AVG = 1;
-    double avgPower, totalPower, count;
-    int zerocount;
-    double maxP, lastMaxP, minP, lastMinP;
-    boolean increasingP = true, decreasingP = true;
+    double avgPower, totalEnergy, cycleTime, lastCycleTime;
+    double runEnergy, runTime, zeroTime, peak, trough;
+    boolean wasAboveMid, haveFullCycle;
 
     public WattmeterElm(int xx, int yy) {
 	super(xx, yy);
@@ -147,50 +146,71 @@ class WattmeterElm extends CircuitElm {
 
     void stepFinished() {
 	double p = getPower();
-	count++;
-	totalPower += p;
-	if (p > maxP && increasingP) {
-	    maxP = p;
-	    increasingP = true;
-	    decreasingP = false;
-	}
-	if (p < maxP && increasingP) {
-	    lastMaxP = maxP;
-	    minP = p;
-	    increasingP = false;
-	    decreasingP = true;
-	    avgPower = totalPower / count;
+	double dt = sim.timeStep;
+	cycleTime += dt;
+	totalEnergy += p * dt;
+	runTime += dt;
+	runEnergy += p * dt;
+
+	// Average over whole cycles, delimited by rising crossings of the long-run mean.
+	// The previous code delimited them by the local extremes of the power waveform,
+	// which is half a period for a sine wave, and for a waveform with a flat section -
+	// such as the output of a half-wave rectifier - gives a window that falls either
+	// side of the conducting part instead of spanning a period.
+	double mid = runEnergy / runTime;
+
+	// Compare against the threshold with hysteresis. While the power is constant it
+	// equals its own running mean, and a bare p > mid then chatters on rounding noise
+	// alone, manufacturing crossings a fraction of a timestep apart. Those leave a
+	// period estimate orders of magnitude too short behind, which the timeout and the
+	// zero check below would then act on.
+	if (p > peak)
+	    peak = p;
+	if (p < trough)
+	    trough = p;
+	double band = (peak - trough) * .05 + Math.abs(peak) * 1e-9;
+	boolean above = wasAboveMid ? p > mid - band : p > mid + band;
+
+	if (above && !wasAboveMid) {
+	    if (haveFullCycle) {
+		avgPower = totalEnergy / cycleTime;
+		if (Double.isNaN(avgPower))
+		    avgPower = 0;
+		lastCycleTime = cycleTime;
+	    } else {
+		// The run up to the first crossing is a partial cycle. Measuring it would
+		// leave a period estimate far shorter than the real one.
+		haveFullCycle = true;
+	    }
+	    totalEnergy = 0;
+	    cycleTime = 0;
+	} else if (lastCycleTime > 0 && cycleTime > lastCycleTime * 8) {
+	    // the waveform stopped or changed shape; don't freeze on a stale reading
+	    avgPower = totalEnergy / cycleTime;
 	    if (Double.isNaN(avgPower))
 		avgPower = 0;
-	    count = 0;
-	    totalPower = 0;
+	    totalEnergy = 0;
+	    cycleTime = 0;
 	}
-	if (p < minP && decreasingP) {
-	    minP = p;
-	    increasingP = false;
-	    decreasingP = true;
-	}
-	if (p > minP && decreasingP) {
-	    lastMinP = minP;
-	    maxP = p;
-	    increasingP = true;
-	    decreasingP = false;
-	    avgPower = totalPower / count;
-	    if (Double.isNaN(avgPower))
-		avgPower = 0;
-	    count = 0;
-	    totalPower = 0;
-	}
+	wasAboveMid = above;
+
+	// Constant power never crosses its own mean, so no period is ever measured. Report
+	// the running mean until one is, which is the right answer for DC anyway.
+	if (lastCycleTime == 0)
+	    avgPower = mid;
+
+	// Clear the reading once the power has been off for longer than a period. The
+	// previous code cleared after five zero samples, which a rectified waveform reaches
+	// during every cycle; tying it to the measured period does not.
 	if (p == 0) {
-	    zerocount++;
-	    if (zerocount > 5) {
-		totalPower = 0;
+	    zeroTime += dt;
+	    if (lastCycleTime > 0 && zeroTime > lastCycleTime * 1.5) {
 		avgPower = 0;
-		maxP = 0;
-		minP = 0;
+		totalEnergy = 0;
+		cycleTime = 0;
 	    }
 	} else {
-	    zerocount = 0;
+	    zeroTime = 0;
 	}
     }
 
