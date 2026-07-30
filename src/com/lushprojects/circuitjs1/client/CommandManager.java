@@ -272,6 +272,11 @@ public class CommandManager {
     		int sp = item.indexOf(' ', 6);
     		app.menus.readSetupFile(item.substring(6, sp), item.substring(sp+1));
     	}
+    	if (menu=="applied" && item.indexOf("setup ") ==0) {
+    		app.undoManager.pushUndo();
+    		int sp = item.indexOf(' ', 6);
+    		app.menus.readSetupAppliedFile(item.substring(6, sp), item.substring(sp+1));
+    	}
     	if (item=="newblankcircuit") {
     	    app.undoManager.pushUndo();
     	    app.menus.readSetupFile("blank.txt", "Blank Circuit");

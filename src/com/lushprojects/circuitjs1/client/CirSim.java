@@ -251,6 +251,33 @@ public class CirSim implements NativePreviewHandler {
 		    menus.getSetupList(true);
 	    }
 	}
+	
+//	Kludge
+	if (TestManager.loadingTestCircuit) {
+	    startCircuitText = startCircuit = null;
+	} else if (startCircuitText != null) {
+	    menus.getSetupAppliedList(false);
+	    loader.readCircuit(startCircuitText);
+	    String electronFileName = getElectronStartCircuitFileName();
+	    if (electronFileName != null)
+		setCircuitTitle(electronFileName);
+	    unsavedChanges = false;
+	} else {
+	    if (stopMessage == null && startCircuitLink!=null) {
+		loader.readCircuit("");
+		menus.getSetupAppliedList(false);
+		ImportFromDropboxDialog.setSim(this);
+		ImportFromDropboxDialog.doImportDropboxLink(startCircuitLink, false);
+	    } else {
+		loader.readCircuit("");
+		if (stopMessage == null && startCircuit != null) {
+		    menus.getSetupAppliedList(false);
+		    menus.readSetupFile(startCircuit, startLabel);
+		}
+		else
+		    menus.getSetupAppliedList(true);
+	    }
+	}
 
 	if (mouseModeReq != null)
 	    commands.menuPerformed("main", mouseModeReq);

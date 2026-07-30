@@ -211,6 +211,12 @@ public class UIManager {
 		    toolbar.setEuroResistors(menus.euroResistorCheckItem.getState());
 		}
 	});
+	menus.showOhmCheckItem.setState(showOhm);
+	menus.showOhmCheckItem.setCommand(
+		new Command() { public void execute(){
+		    setOptionInStorage("showOhm", menus.showOhmCheckItem.getState());
+		}
+	});
 	menus.euroGatesCheckItem.setCommand(
 		new Command() { public void execute(){
 		    setOptionInStorage("euroGates", menus.euroGatesCheckItem.getState());
