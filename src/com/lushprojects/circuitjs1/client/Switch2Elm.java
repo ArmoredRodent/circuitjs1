@@ -28,6 +28,7 @@ import com.google.gwt.xml.client.Document;
 	int link;
 	int throwCount;
 	static final int FLAG_CENTER_OFF = 1;
+	static final int FLAG_FLIPPED = 4096;
 	boolean positionFlipped; // tracks runtime flip state for sync
 	
 	public Switch2Elm(int xx, int yy) {
@@ -49,6 +50,7 @@ import com.google.gwt.xml.client.Document;
 		throwCount = new Integer(st.nextToken()).intValue();
 	    } catch (Exception e) { }
 	    noDiagonal = true;
+		positionFlipped = (f & FLAG_FLIPPED) != 0;
 	}
 	int getDumpType() { return 'S'; }
 
@@ -73,9 +75,21 @@ import com.google.gwt.xml.client.Document;
 	    swpoles = newPointArray(2+throwCount);
 	    int i;
 	    for (i = 0; i != throwCount; i++) {
-		int hs = -openhs*(i-(throwCount-1)/2);
-		if (throwCount == 2 && i == 0)
-		    hs = openhs;
+//	Works but Flip X, Flip Y and Flip XY all cause positionFlipped = true,
+//	so user has to tweak how switch is positioned/used = kludge
+
+			int hs;
+			if (positionFlipped) 
+				hs = openhs*(i-(throwCount-1)/2);
+			else
+				hs = -openhs*(i-(throwCount-1)/2);
+			
+			if (throwCount == 2 && i == 0) {
+				if (positionFlipped) 
+					hs = -openhs;
+				else
+					hs = openhs;
+			}
 		interpPoint(lead1,  lead2,  swpoles[i], 1, hs);
 		interpPoint(point1, point2, swposts[i], 1, hs);
 	    }
@@ -163,7 +177,7 @@ import com.google.gwt.xml.client.Document;
 			if (s2.link == link) {
 			    int pos = position;
 			    if (s2.positionFlipped != this.positionFlipped)
-				pos = posCount - 1 - pos;
+					s2.position = pos;
 			    if (pos < s2.posCount)
 				s2.position = pos;
 			}
