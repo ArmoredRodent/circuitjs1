@@ -25,6 +25,7 @@ import com.lushprojects.circuitjs1.client.util.Locale;
 
 class StopTriggerElm extends CircuitElm {
 	double triggerVoltage;
+	double oldVoltage;
 	boolean triggered, stopped, conditionActive;
 	double delay, triggerTime;
 	int type;
@@ -90,7 +91,8 @@ class StopTriggerElm extends CircuitElm {
 	}
 	void stepFinished() {
 	    stopped = false;
-	    boolean condition = (type == 0 && volts[0] >= triggerVoltage) || (type == 1 && volts[0] <= triggerVoltage);
+	    boolean condition = ((type == 0 && volts[0] >= triggerVoltage) || (type == 1 && volts[0] <= triggerVoltage) || 
+	    	(type == 2 && volts[0] >= triggerVoltage + oldVoltage) || (type == 3 && volts[0] <= oldVoltage - triggerVoltage));
 	    if (!conditionActive && condition) {
 		conditionActive = true;
 		triggerCount++;
@@ -107,6 +109,7 @@ class StopTriggerElm extends CircuitElm {
 		stopped = true;
 		app.setSimRunning(false);
 	    }
+		oldVoltage = volts[0];
 	}
 	
 	double getVoltageDiff() { return volts[0]; }
@@ -128,6 +131,8 @@ class StopTriggerElm extends CircuitElm {
 		ei.choice = new Choice();
 		ei.choice.add(">=");
 		ei.choice.add("<=");
+		ei.choice.add("\u2191 Edge");
+		ei.choice.add("\u2193 Edge");
 		ei.choice.select(type);
 		return ei;
 	    }
@@ -145,7 +150,13 @@ class StopTriggerElm extends CircuitElm {
 	    if (n == 0)
 		triggerVoltage = ei.value;
 	    if (n == 1)
+		{
 		type = ei.choice.getSelectedIndex();
+			if (type == 2)
+				oldVoltage = -100000.0;
+			if (type == 3)
+				oldVoltage = 100000.0;
+		}
 	    if (n == 2)
 		delay = ei.value;
 	    if (n == 3) {
