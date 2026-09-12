@@ -525,6 +525,8 @@ public class Menus {
 		    if (!hideMenu)
 			Window.alert(Locale.LS("Can't load circuit list!"));
 		    GWT.log("File Error Response", exception);
+		    // still try to load the Applied menu even if Circuits failed
+		    getSetupAppliedList(openDefault);
 		}
 
 		public void onResponseReceived(Request request, Response response) {
@@ -534,17 +536,21 @@ public class Menus {
 		    processSetupList(text.getBytes(), openDefault);
 		    // end or processing
 		    }
-		    else { 
+		    else {
 			Window.alert(Locale.LS("Can't load circuit list!"));
 			GWT.log("Bad file server response:"+response.getStatusText() );
 		    }
+		    // load the Applied menu only after the Circuits menu above is fully
+		    // built, so "Circuits" always ends up before "Applied" regardless of
+		    // which network request happens to finish first
+		    getSetupAppliedList(openDefault);
 		}
 	    });
 	} catch (RequestException e) {
 	    GWT.log("failed file reading", e);
 	}
     }
-		
+
     void processSetupList(byte b[], final boolean openDefault) {
 	int len = b.length;
     	MenuBar currentMenuBar;
@@ -606,11 +612,105 @@ public class Menus {
 	sim.resetEditingContext();
 	// don't avoid caching here, it's unnecessary and makes offline PWA's not work
 	String url=GWT.getModuleBaseURL()+"circuits/"+str; // +"?v="+random.nextInt();
-	sim.loader.loadFileFromURL(url);
+	// if it's not in circuits/, fall back to applied/ before giving up
+	String appliedUrl=GWT.getModuleBaseURL()+"applied/"+str;
+	sim.loader.loadFileFromURL(url, appliedUrl);
 	if (title != null)
 	    sim.setCircuitTitle(title);
 	sim.unsavedChanges = false;
 	ExportAsLocalFileDialog.setLastFileName(str.equals("blank.txt") ? null : str);
+    }
+
+    void getSetupAppliedList(final boolean openDefault) {
+
+    	String url;
+    	url = GWT.getModuleBaseURL()+"setupappliedlist.txt"; // +"?v="+random.nextInt();
+	RequestBuilder requestBuilder = new RequestBuilder(RequestBuilder.GET, url);
+	try {
+	    requestBuilder.sendRequest(null, new RequestCallback() {
+		public void onError(Request request, Throwable exception) {
+		    GWT.log("Applied circuit list not loaded", exception);
+		}
+
+		public void onResponseReceived(Request request, Response response) {
+		    if (response.getStatusCode()==Response.SC_OK) {
+			String text = response.getText();
+			processSetupAppliedList(text.getBytes(), openDefault);
+		    }
+		    else {
+			GWT.log("Applied circuit list not loaded: "+response.getStatusText());
+		    }
+		}
+	    });
+	} catch (RequestException e) {
+	    GWT.log("failed file reading", e);
+	}
+    }
+
+    void processSetupAppliedList(byte b[], final boolean openDefault) {
+	int len = b.length;
+    	MenuBar currentMenuBar;
+    	MenuBar stack[] = new MenuBar[6];
+    	int stackptr = 0;
+    	currentMenuBar=new MenuBar(true);
+    	currentMenuBar.setAutoOpen(true);
+    	menuBar.addItem(Locale.LS("Applied"), currentMenuBar);
+    	stack[stackptr++] = currentMenuBar;
+    	int p;
+    	for (p = 0; p < len; ) {
+	    int l;
+	    for (l = 0; l != len-p; l++)
+		if (b[l+p] == '\n' || b[l+p] == '\r') {
+			l++;
+			break;
+		}
+	    String line = new String(b, p, l-1);
+	    if (line.isEmpty() || line.charAt(0) == '#')
+		    ;
+	    else if (line.charAt(0) == '+') {
+		MenuBar n = new MenuBar(true);
+		n.setAutoOpen(true);
+		currentMenuBar.addItem(Locale.LS(line.substring(1)),n);
+		currentMenuBar = stack[stackptr++] = n;
+	    } else if (line.charAt(0) == '-') {
+		    currentMenuBar = stack[--stackptr-1];
+	    } else {
+		int i = line.indexOf(' ');
+		if (i > 0) {
+		    String title = Locale.LS(line.substring(i+1));
+		    boolean first = false;
+		    if (line.charAt(0) == '>')
+			    first = true;
+		    String file = line.substring(first ? 1 : 0, i);
+		    currentMenuBar.addItem(new MenuItem(title,
+			    new MyCommand("applied", "setup "+file+" " + title)));
+		    String startCircuit = sim.startCircuit;
+		    String startLabel = sim.startLabel;
+		    if (file.equals(startCircuit) && startLabel == null) {
+			startLabel = title;
+			sim.setCircuitTitle(title);
+		    }
+		    if (first && startCircuit == null) {
+			startCircuit = file;
+			startLabel = title;
+			if (openDefault && sim.stopMessage == null)
+			    readSetupAppliedFile(startCircuit, startLabel);
+		    }
+		}
+	    }
+	    p += l;
+    	}
+    }
+
+    void readSetupAppliedFile(String str, String title) {
+	System.out.println(str);
+	sim.resetEditingContext();
+	// don't avoid caching here, it's unnecessary and makes offline PWA's not work
+	String url=GWT.getModuleBaseURL()+"applied/"+str; // +"?v="+random.nextInt();
+	sim.loader.loadFileFromURL(url);
+	if (title != null)
+	    sim.setCircuitTitle(title);
+	sim.unsavedChanges = false;
     }
 }
 
