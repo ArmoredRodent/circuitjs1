@@ -1,0 +1,10 @@
+<cir f="3" ts="1e-8" ic="10.20027730826997" cb="50" pb="50" vr="5" mts="5e-11">
+  <R x="144 776 112 776" f="1" wf="2" fr="12000" maxv="2.5" bias="2.5"/>
+  <x x="108 748 230 751" f="4" si="24" te="Single Step"/>
+  <StopTrigger x="200 776 240 776" f="0" tv="1" tp="1" dl="0" ct="1" rd="0"/>
+  <s x="144 776 200 776" f="0" p="1"/>
+  <x x="-12 643 403 700" f="4" si="24" te="Bug: Level Trigger fires on Circuit Load\n\nStatus: Completed"/>
+  <o en="0" sp="64" f="x3" p="0">
+    <p v="0" sc="5"/>
+  </o>
+</cir>

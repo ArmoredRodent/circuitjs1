@@ -175,6 +175,12 @@ public class ShortcutsDialog extends Dialog {
 		if (menuItemIndex >= 0) {
 		    CheckboxMenuItem item = ui.mainMenuItems.get(menuItemIndex);
 		    item.setShortcut(str);
+		    // the element menu is built twice (right-click menu and Draw menu), so update
+		    // the other copy of this item too
+		    String name = ui.mainMenuItemNames.get(menuItemIndex);
+		    for (int j = 0; j != ui.mainMenuItems.size(); j++)
+			if (j != menuItemIndex && ui.mainMenuItemNames.get(j) == name)
+			    ui.mainMenuItems.get(j).setShortcut(str);
 		    if (str.length() > 0)
 			sim.shortcuts.put((int) str.charAt(0), ui.mainMenuItemNames.get(menuItemIndex));
 		} else if (str.length() > 0)

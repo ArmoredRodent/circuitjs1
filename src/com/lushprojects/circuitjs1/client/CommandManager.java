@@ -655,6 +655,7 @@ public class CommandManager {
     		}
 
     	}
+    	BoxElm.sortBoxes(app, app.elmList);	// pasted boxes go behind
     	app.needAnalyze();
     	app.undoManager.writeRecoveryToStorage();
     }

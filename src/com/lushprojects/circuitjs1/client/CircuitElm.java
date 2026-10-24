@@ -1323,6 +1323,12 @@ public abstract class CircuitElm implements Editable {
     boolean isCreating() { return app.mouse.dragElm == this; }
     boolean isSelected() { return selected; }
     boolean canShowValueInScope(int v) { return false; }
+    // extra values an element can offer to the scope (codes >= Scope.VAL_EXTRA).
+    // The scope properties dialog adds a "Show <name>" checkbox for each one.
+    int[] getExtraScopeValues() { return null; }
+    String getExtraScopeValueName(int v) { return null; }
+    // true = the scope's auto-scale ignores this value (it is still drawn, clipped to the scope)
+    boolean excludeScopeValueFromScale(int v) { return false; }
     void setSelected(boolean x) { selected = x; }
     void selectRect(Rectangle r, boolean add) {
 	if (r.intersects(boundingBox))

@@ -816,6 +816,7 @@ public class SimulationManager {
     // Most of this has been moved to preStampCircuit() so it can be avoided if the simulation is stopped.
     void analyzeCircuit() {
 	app.setStopElm(null, null);
+	app.ui.updateSwitchButtons();	// switch keys/buttons may have changed
 	elmList = app.elmList;
 	if (elmList.isEmpty()) {
 	    app.postDrawList = new Vector<Point>();

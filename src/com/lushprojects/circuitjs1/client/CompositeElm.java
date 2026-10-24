@@ -2,6 +2,7 @@ package com.lushprojects.circuitjs1.client;
 
 import java.util.Vector;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map.Entry;
 
 import com.google.gwt.xml.client.Element;
@@ -202,11 +203,29 @@ public abstract class CompositeElm extends CircuitElm {
 	}
 
 	// Flatten compNodeHash in to compNodeList
+	//
+	// The same internal node id is allowed to appear more than once in
+	// extNodeIds -- e.g. a composite part with two leads physically tied
+	// to one internal node (a packaged transistor with duplicate
+	// collector or emitter leads for current capacity, rather than a
+	// genuinely separate junction -- think "BEEC"/"BECC" style pinouts
+	// on some real 3-terminal parts). Each occurrence still becomes its
+	// own external post (posts/getPost()/setNode() all index by post
+	// number as usual), but every occurrence shares the same CircuitNode
+	// object, so they behave as a single electrical node.
+	//
+	// This used to remove a node from compNodeHash the first time it was
+	// claimed by an external post, so a *second* reference to that same
+	// id failed with IllegalArgumentException below. Track claimed ids in
+	// extNodeIdSet instead of deleting them, and use that set only to
+	// skip already-claimed ids when adding the leftover (internal,
+	// non-external) nodes afterward.
+	HashSet<Integer> extNodeIdSet = new HashSet<Integer>();
 	try {
 	    for (int i = 0; i < extNodeIds.length; i++) { // External Nodes First
 		if (compNodeHash.containsKey(extNodeIds[i])) {
 		    compNodeList.add(compNodeHash.get(extNodeIds[i]));
-		    compNodeHash.remove(extNodeIds[i]);
+		    extNodeIdSet.add(extNodeIds[i]);
 		} else
 		    throw new IllegalArgumentException();
 	    }
@@ -215,6 +234,8 @@ public abstract class CompositeElm extends CircuitElm {
 	    return;
 	}
 	for (Entry<Integer, CircuitNode> entry : compNodeHash.entrySet()) {
+	    if (extNodeIdSet.contains(entry.getKey()))
+		continue;
 	    compNodeList.add(entry.getValue());
 	}
 

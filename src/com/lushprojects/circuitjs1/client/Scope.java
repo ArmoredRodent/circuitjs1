@@ -44,6 +44,7 @@ class Scope {
     static final int VAL_VCE = 6;
     static final int VAL_R = 2;
     static final int VAL_CHARGE = 8;
+    static final int VAL_EXTRA = 20;	// first code for element-defined values (see CircuitElm.getExtraScopeValues)
     static final int UNITS_V = 0;
     static final int UNITS_A = 1;
     static final int UNITS_W = 2;
@@ -82,6 +83,10 @@ class Scope {
     String curColor, voltColor;
     double gridStepX, gridStepY;
     double maxValue, minValue;
+    boolean alignY;			// Align Y: share the vertical range with docked partners (ScopeManager.alignScopes)
+    boolean aligned;			// set each frame: alignY is on and at least one partner was found
+    double alignMax, alignMin;		// the group's range, used for the grid instead of maxValue/minValue
+    boolean alignNeg, alignPos;		// the group shows values below / above zero right now
     int manDivisions; // Number of vertical divisions when in manual mode
     static int lastManDivisions = 8;
     boolean drawGridLines;
@@ -138,13 +143,57 @@ class Scope {
     // check if any plot has the given value (unlike showingValue which checks ALL plots)
     boolean hasPlotValue(int v) {
 	for (int i = 0; i != plots.size(); i++) {
-	    if (plots.get(i).value == v)
+	    if (plots.get(i).value == v && !plots.get(i).hidden)
 		return true;
 	}
 	return false;
     }
 
+    // Transistor values (Ib/Ic/Ie, Vbe/Vbc/Vce).  In an X/Y or V-vs-I plot they act as two
+    // radio groups, one current and one voltage: picking one replaces the other in the same
+    // plot slot, so the X/Y axis assignment is kept.  Time plots can still show any mix.
+    void showTransistorValue(int val, boolean state) {
+	if (!plot2d.enabled) {
+	    showPlotValue(val, state);
+	    return;
+	}
+	if (!state)
+	    return;	// radio behavior: can't uncheck, the dialog re-syncs the box
+	for (int i = 0; i < plots.size(); i++) {
+	    ScopePlot p = plots.get(i);
+	    if (p.elm instanceof TransistorElm && p.value >= VAL_IB && p.value <= VAL_VCE &&
+		    p.units == p.elm.getScopeUnits(val)) {
+		int u = p.units;
+		plots.set(i, new ScopePlot(p.elm, u, val, getManScaleFromMaxScale(u, false)));
+		calcVisiblePlots();
+		resetGraph();
+		return;
+	    }
+	}
+	showPlotValue(val, true);
+    }
+
 void showPlotValue(int val, boolean b) {
+	// element-defined values are hidden rather than removed, like voltage and current,
+	// so they keep recording and their history comes back when re-shown
+	if (val >= VAL_EXTRA) {
+	    ScopePlot found = null;
+	    for (ScopePlot p : plots)
+		if (p.value == val)
+		    found = p;
+	    if (found != null)
+		found.hidden = !b;
+	    else if (b) {
+		CircuitElm ce = getElm();
+		if (ce != null) {
+		    int u = ce.getScopeUnits(val);
+		    plots.add(new ScopePlot(ce, u, val, getManScaleFromMaxScale(u, false)));
+		}
+	    }
+	    calcVisiblePlots();
+	    resetGraph();
+	    return;
+	}
 	if (b) {
 	    if (!hasPlotValue(val)) {
 		CircuitElm ce = getElm();
@@ -202,6 +251,8 @@ void showPlotValue(int val, boolean b) {
 	calcVisiblePlots();
     	scopeTimeStep = sim.maxTimeStep;
     	plot2d.allocImage();
+    	if (!plot2d.keepOnResize)
+    	    plot2d.resetFit();
     	trigger.reset(scopePointCount);
     	plot2d.lastTrailSimTime = -1;
     }
@@ -305,6 +356,13 @@ void showPlotValue(int val, boolean b) {
         		    visiblePlots.add(plot);
         		    plot.assignColor(ac++);
         		}
+        	    } else if (plot.value >= VAL_EXTRA) {
+        		// element-defined values get a fixed color each (by their code), so a
+        		// trace keeps its color whatever else is shown and in whatever order
+        		if (!plot.hidden) {
+        		    visiblePlots.add(plot);
+        		    plot.color = ScopePlot.colors[(plot.value - VAL_EXTRA) % ScopePlot.colors.length];
+        		}
         	    } else {
         		visiblePlots.add(plot);
         		plot.assignColor(oc++);
@@ -320,8 +378,13 @@ void showPlotValue(int val, boolean b) {
 	int w = this.rect.width;
 	int h = this.rect.height;
 	this.rect = r;
-	if (this.rect.width != w || (plot2d.plotXY && this.rect.height != h))
+	if (this.rect.width != w || (plot2d.enabled && this.rect.height != h)) {
+	    // a resize (window resize, or Save As Image drawing the circuit at another scale)
+	    // keeps the X/Y trail and fit; the trail image is just scaled to the new size
+	    plot2d.keepOnResize = true;
 	    resetGraph();
+	    plot2d.keepOnResize = false;
+	}
     }
     
     int getWidth() { return rect.width; }
@@ -608,7 +671,7 @@ void showPlotValue(int val, boolean b) {
     	
     	
     	if (plot2d.enabled) {
-    		plot2d.draw(g);
+    		plot2d.draw(g, forExport);
     		return;
     	}
 
@@ -627,7 +690,7 @@ void showPlotValue(int val, boolean b) {
     	int i;
     	for (i = 0; i != UNITS_COUNT; i++) {
     	    reduceRange[i] = false;
-    	    if (maxScale && !manualScale)
+    	    if (maxScale && !manualScale && !aligned)
     		scale[i] = 1e-4;
     	}
     	
@@ -636,7 +699,7 @@ void showPlotValue(int val, boolean b) {
     	
     	for (si = 0; si != visiblePlots.size(); si++) {
     	    ScopePlot plot = visiblePlots.get(si);
-    	    calcPlotScale(plot);
+    	    if (!aligned) calcPlotScale(plot);
     	    if (app.scopeManager.scopeSelected == -1 && plot.elm !=null && plot.elm.isMouseElm())
     		somethingSelected = true;
     	    reduceRange[plot.units] = true;
@@ -673,23 +736,25 @@ void showPlotValue(int val, boolean b) {
     	// draw volt plots on top (last), then current plots underneath, then everything else
     	for (i = 0; i != visiblePlots.size(); i++) {
     	    if (visiblePlots.get(i).units > UNITS_A && i != selectedPlot)
-    		drawPlot(g, visiblePlots.get(i), allPlotsSameUnits, false, sel);
+    		drawPlot(g, visiblePlots.get(i), allPlotsSameUnits, false, sel, forExport);
     	}
     	for (i = 0; i != visiblePlots.size(); i++) {
     	    if (visiblePlots.get(i).units == UNITS_A && i != selectedPlot)
-    		drawPlot(g, visiblePlots.get(i), allPlotsSameUnits, false, sel);
+    		drawPlot(g, visiblePlots.get(i), allPlotsSameUnits, false, sel, forExport);
     	}
     	for (i = 0; i != visiblePlots.size(); i++) {
     	    if (visiblePlots.get(i).units == UNITS_V && i != selectedPlot)
-    		drawPlot(g, visiblePlots.get(i), allPlotsSameUnits, false, sel);
+    		drawPlot(g, visiblePlots.get(i), allPlotsSameUnits, false, sel, forExport);
     	}
     	// draw selection on top.  only works if selection chosen from scope
     	if (selectedPlot >= 0 && selectedPlot < visiblePlots.size())
-    	    drawPlot(g, visiblePlots.get(selectedPlot), allPlotsSameUnits, true, sel);
+    	    drawPlot(g, visiblePlots.get(selectedPlot), allPlotsSameUnits, true, sel, forExport);
 
     	drawTriggerIndicator(g);
         overlays.draw(g);
-    	
+        if (forExport)
+            drawExportLegend(g);
+
     	g.restore();
 
     	if (!forExport)
@@ -707,12 +772,35 @@ void showPlotValue(int val, boolean b) {
     }
 
     
+    // Unit Align Y groups this scope under, or -1 if it can't take part
+    // (Align Y off, manual scale, X/Y plot, or plots in more than one unit).
+    int alignUnits() {
+	if (!alignY || manualScale || plot2d.enabled || visiblePlots.size() == 0)
+	    return -1;
+	int u = visiblePlots.get(0).units;
+	for (ScopePlot p : visiblePlots)
+	    if (p.units != u)
+		return -1;
+	return u;
+    }
+
+    // This scope's own auto range, the same way draw() works it out, for ScopeManager.alignScopes()
+    void calcOwnRange(int u) {
+	if (maxScale)
+	    scale[u] = 1e-4;
+	for (ScopePlot p : visiblePlots)
+	    calcPlotScale(p);
+	calcMaxAndMin(u);
+    }
+
     // calculate maximum and minimum values for all plots of given units
     void calcMaxAndMin(int units) {
 	maxValue = -1e8;
 	minValue = 1e8;
 	for (ScopePlot plot : visiblePlots) {
 	    if (plot.units != units)
+		continue;
+	    if (plot.elm != null && plot.elm.excludeScopeValueFromScale(plot.value))
 		continue;
 	    ScopeDataIterator sdi = new ScopeDataIterator(this, plot);
 	    for (int i : sdi) {
@@ -727,6 +815,8 @@ void showPlotValue(int val, boolean b) {
     // adjust scale of a plot
     void calcPlotScale(ScopePlot plot) {
 	if (manualScale)
+	    return;
+	if (plot.elm != null && plot.elm.excludeScopeValueFromScale(plot.value))
 	    return;
 	double max = 0;
 	double gridMax = scale[plot.units];
@@ -779,8 +869,25 @@ void showPlotValue(int val, boolean b) {
 		double mn = 0;
 		if (maxScale) {
 		    // scale is maxed out, so fix boundaries of scope at maximum and minimum.
-		    mx = maxValue;
-		    mn = minValue;
+		    mx = aligned ? alignMax : maxValue;
+		    mn = aligned ? alignMin : minValue;
+		    if (mx < mn) {
+			// nothing counted toward the range (e.g. only excluded traces shown)
+			mx = gridMax;
+			mn = -gridMax;
+		    } else if (mx - mn < 1e-6) {
+			// flat traces: don't collapse to a zero-height grid
+			double c = (mx+mn)*.5;
+			double h = Math.max(Math.abs(c)*.1, 1e-3);
+			mx = c+h;
+			mn = c-h;
+		    }
+		} else if (aligned) {
+		    // zero on the bottom, in the middle, or at the top, from what the group shows now
+		    if (alignNeg)
+			mn = -gridMax;
+		    if (alignNeg && !alignPos)
+			mx = 0;
 		} else if (showNegative || minValue < (mx+mn)*.5 - (mx-mn)*.55) {
 		    mn = -gridMax;
 		    showNegative = true;
@@ -845,16 +952,23 @@ void showPlotValue(int val, boolean b) {
 	}
     }
 
-    void drawPlot(Graphics g, ScopePlot plot, boolean allPlotsSameUnits, boolean selected, boolean allSelected) {
+    void drawPlot(Graphics g, ScopePlot plot, boolean allPlotsSameUnits, boolean selected, boolean allSelected, boolean forExport) {
 	if (plot.elm == null)
 	    return;
 	final int maxy = (rect.height-1)/2;
 
-	String color = (somethingSelected) ? "#A0A0A0" : plot.color;
-	if (allSelected || (app.scopeManager.scopeSelected == -1 && getSingleElm() == null && plot.elm.isMouseElm()))
-	    color = CircuitElm.selectColor.getHexValue();
-	else if (selected)
-	    color = plot.color;
+	// during export, always use each trace's real color -- ignore whatever is
+	// hovered/selected on screen at the moment the export was triggered (the scope's
+	// own popup menu requires hovering it, which would otherwise grey out every trace)
+	String color = plot.color;
+	if (!forExport) {
+	    if (somethingSelected)
+		color = "#A0A0A0";
+	    if (allSelected || (app.scopeManager.scopeSelected == -1 && getSingleElm() == null && plot.elm.isMouseElm()))
+		color = CircuitElm.selectColor.getHexValue();
+	    else if (selected)
+		color = plot.color;
+	}
 
 	int ipa = displayStartIndex(plot, rect.width);
 	double maxV[] = plot.maxValues;
@@ -880,6 +994,7 @@ void showPlotValue(int val, boolean b) {
 	// Data beyond that is stale (old circular buffer contents).
 	int drawWidth = validDataCount(plot, ipa, rect.width);
 	int ox = -1, oy = -1;
+	boolean pathOpen = false;
 	int i;
 	for (i = 0; i != drawWidth; i++) {
 	    int ip = (i+ipa) & (scopePointCount-1);
@@ -891,6 +1006,23 @@ void showPlotValue(int val, boolean b) {
 		    reduceRange[plot.units] = false;
 		    minRangeLo = -1000;
 		    minRangeHi = 1000;
+		}
+		if (forExport) {
+		    // export wants each trace to come out as a single connected line (so it's
+		    // one selectable/colorable/scalable object in a vector editor), not the
+		    // on-screen per-pixel min/max envelope ticks below -- plot one point per
+		    // column (the midpoint of that column's min/max) and connect them with a
+		    // single path.  Matches the on-screen pixels exactly whenever a column has
+		    // only one sample (minvy==maxvy, the normal case); a column spanning a
+		    // fast/aliased swing is drawn at its midpoint instead of its full height.
+		    int y = maxy - (minvy+maxvy)/2;
+		    if (!pathOpen) {
+			g.context.beginPath();
+			g.context.moveTo(i, y);
+			pathOpen = true;
+		    } else
+			g.context.lineTo(i, y);
+		    continue;
 		}
 		if (ox != -1) {
 		    if (minvy == oy && maxvy == oy)
@@ -904,9 +1036,15 @@ void showPlotValue(int val, boolean b) {
 		    continue;
 		}
 		g.drawLine(i, maxy-minvy, i, maxy-maxvy);
+	    } else if (forExport && pathOpen) {
+		g.context.stroke();
+		pathOpen = false;
 	    }
 	}
-	if (ox != -1)
+	if (forExport) {
+	    if (pathOpen)
+		g.context.stroke();
+	} else if (ox != -1)
 	    g.drawLine(ox, maxy-oy, i-1, maxy-oy);
     }
 
@@ -1213,16 +1351,47 @@ void showPlotValue(int val, boolean b) {
 	downloadSVG(ImageExporter.getSerializedSVG(context), "scope.svg");
     }
 
+    // lists each visible trace's name, in its own color, down the left edge -- export only,
+    // since on screen the trace is identified by hovering/selecting it instead.  starts
+    // below whatever overlays.draw() already wrote (Max=, scale, scope label, etc.) so the
+    // two don't overlap.
+    void drawExportLegend(Graphics g) {
+	int y = overlays.textY + 15;
+	for (int i = 0; i != visiblePlots.size(); i++) {
+	    ScopePlot plot = visiblePlots.get(i);
+	    if (plot.elm == null)
+		continue;
+	    if (rect.height <= y + 5)
+		break;
+	    g.setColor(plot.color);
+	    String name = plot.elm.getClass().getSimpleName().replace("Elm", "");
+	    g.drawString(name, 0, y);
+	    y += 15;
+	}
+    }
+
     // draws this scope, sized to its own rect, into a fresh context at (0,0) instead of
     // its on-screen position, with a solid background and no mouse-driven UI chrome --
-    // shared by exportPNG/exportSVG
+    // shared by exportPNG/exportSVG.
+    // draw(g, true) translates by rect.x/rect.y internally to place the scope at its
+    // on-screen position, so rather than pre-translating here (which left the background
+    // fill and the traces in different coordinate spaces -- harmless on a real canvas,
+    // but canvas2svg doesn't compose the two translates the same way, so the SVG traces
+    // ended up far from the background), we temporarily zero out rect's origin so that
+    // internal translate becomes a no-op and everything ends up in the same (0,0)-based
+    // space as the fresh context.
     private void drawForExport(Context2d context) {
 	context.setLineCap(Context2d.LineCap.ROUND);
-	context.translate(-rect.x, -rect.y);
 	Graphics g = new Graphics(context);
 	g.setColor(app.isPrintable() ? Color.white : Color.black);
 	g.fillRect(0, 0, rect.width, rect.height);
-	draw(g, true);
+	Rectangle savedRect = rect;
+	rect = new Rectangle(0, 0, rect.width, rect.height);
+	try {
+	    draw(g, true);
+	} finally {
+	    rect = savedRect;
+	}
     }
 
     static native void downloadDataURL(String dataURL, String filename) /*-{
@@ -1355,17 +1524,19 @@ void showPlotValue(int val, boolean b) {
     	if (mi == "showpower")
     		showPower(state);
     	if (mi == "showib")
-    		showPlotValue(VAL_IB, state);
+    		showTransistorValue(VAL_IB, state);
     	if (mi == "showic")
-    		showPlotValue(VAL_IC, state);
+    		showTransistorValue(VAL_IC, state);
     	if (mi == "showie")
-    		showPlotValue(VAL_IE, state);
+    		showTransistorValue(VAL_IE, state);
     	if (mi == "showvbe")
-    		showPlotValue(VAL_VBE, state);
+    		showTransistorValue(VAL_VBE, state);
     	if (mi == "showvbc")
-    		showPlotValue(VAL_VBC, state);
+    		showTransistorValue(VAL_VBC, state);
     	if (mi == "showvce")
-    		showPlotValue(VAL_VCE, state);
+    		showTransistorValue(VAL_VCE, state);
+    	if (mi.startsWith("showextra:"))
+    		showPlotValue(Integer.parseInt(mi.substring(10)), state);
     	if (mi == "showvcevsic") {
     		plot2d.enabled = true;
     		plot2d.plotXY = false;
@@ -1380,6 +1551,18 @@ void showPlotValue(int val, boolean b) {
     	}
     	if (mi == "manualscale")
 		setManualScale(state, true);
+    	if (mi == "xyorigin") {
+    		plot2d.includeOrigin = state;
+    		plot2d.resetFit();
+    		plot2d.clearView();
+    	}
+    	if (mi == "alignY")
+		alignY = state;
+    	if (mi == "xyalignx") {
+    		plot2d.alignX = state;
+    		plot2d.resetFit();
+    		plot2d.clearView();
+    	}
     	if (mi == "plotxy") {
     		plot2d.plotXY = plot2d.enabled = state;
     		if (plot2d.enabled) {

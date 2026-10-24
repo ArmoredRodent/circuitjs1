@@ -1,0 +1,21 @@
+$ 3 0.000005 10.20027730826997 50 5 50 5e-11
+t 400 256 448 256 0 1 0 0 100 default
+t 448 320 400 320 0 1 0 0 100 default
+t 432 368 432 432 0 1 0 0 100 default
+t 432 568 432 504 0 1 0 0 100 default
+t 496 256 544 256 0 -1 0 0 100 default
+t 544 320 496 320 0 -1 0 0 100 default
+t 528 368 528 424 0 -1 0 0 100 default
+t 528 568 528 504 0 -1 0 0 100 default
+j 696 264 760 264 32 -4 0.00125
+j 760 328 696 328 32 -4 0.00125
+j 728 376 728 440 32 -4 0.00125
+j 728 576 728 512 32 -4 0.00125
+j 808 264 872 264 33 -4 0.00125
+j 872 328 808 328 33 -4 0.00125
+j 840 376 840 440 33 -4 0.00125
+j 840 576 840 512 33 -4 0.00125
+j 944 264 976 264 32 -4 0.00125
+j 1008 264 1040 264 33 -4 0.00125
+x 433 615 886 726 4 24 Changes:\sAlign\spnp\sarrow\swith\sBE\sjunction\\nChange\sBJT\sarrow\sto\sdefault\scolor\\nAdd\sBCE\slabels\sto\svertical\sparts\\n\\nStatus:\sAccepted\s4.1.5js
+x 433 71 962 209 4 24 Changes:\sAdd\sG,D,S\son\smouse\sover\\nAdd\sFlip\sD/S\\nIncrease\ssize\sof\sArrow\\nMake\sit\smore\scompatible\swith\sother\sactive\sdevices\\n\\nStatus:\sAccepted\s4.1.5js

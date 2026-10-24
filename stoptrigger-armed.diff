@@ -1,0 +1,33 @@
+--- a/src/com/lushprojects/circuitjs1/client/StopTriggerElm.java	2026-10-05 01:02:23.953870395 -0230
++++ b/src/com/lushprojects/circuitjs1/client/StopTriggerElm.java	2026-10-05 01:02:23.956442029 -0230
+@@ -26,6 +26,10 @@
+ class StopTriggerElm extends CircuitElm {
+ 	double triggerVoltage;
+ 	boolean triggered, stopped, conditionActive, durationMet;
++	// armed: we've seen the condition false at least once since reset, so a later
++	// true counts as a real transition (edge).  Without this, a condition that is
++	// already true when the circuit loads/resets would stop the sim on the first step.
++	boolean armed;
+ 	double delay, triggerTime;
+ 	double requiredDuration, conditionStartTime;
+ 	int type;
+@@ -68,6 +72,7 @@
+ 	    conditionActive = false;
+ 	    durationMet = false;
+ 	    triggerCount = 0;
++	    armed = false;	// must see the condition go false before it can trigger
+ 	}
+ 	int getDumpType() { return 408; }
+ 	int getPostCount() { return 1; }
+@@ -95,7 +100,10 @@
+ 	void stepFinished() {
+ 	    stopped = false;
+ 	    boolean condition = (type == 0 && volts[0] >= triggerVoltage) || (type == 1 && volts[0] <= triggerVoltage);
+-	    if (!conditionActive && condition) {
++	    if (!condition)
++		armed = true;
++	    // ignore the condition until armed, i.e. only a false->true transition starts it
++	    if (armed && !conditionActive && condition) {
+ 		conditionActive = true;
+ 		conditionStartTime = sim.t;
+ 		durationMet = false;

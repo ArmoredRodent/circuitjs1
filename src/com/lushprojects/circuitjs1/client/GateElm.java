@@ -21,8 +21,10 @@ package com.lushprojects.circuitjs1.client;
 
 import com.google.gwt.xml.client.Element;
 import com.google.gwt.xml.client.Document;
+import com.google.gwt.event.dom.client.MouseWheelEvent;
+import com.google.gwt.event.dom.client.MouseWheelHandler;
 
-abstract class GateElm extends CircuitElm {
+abstract class GateElm extends CircuitElm implements MouseWheelHandler {
 	final int FLAG_SMALL = 1<<0;
 	final int FLAG_SCHMITT = 1<<1;
 	final int FLAG_INVERT_INPUTS = 1<<2;
@@ -67,6 +69,18 @@ abstract class GateElm extends CircuitElm {
 	    setupVolts();
 	}
 	boolean isInverting() { return false; }
+
+	// mouse wheel cycles AND/NAND/OR/NOR/XOR/XNOR (see TypeScrollPopup)
+	public void onMouseWheel(MouseWheelEvent e) {
+	    if (CirSim.typeScrollPopup != null && CirSim.typeScrollPopup.isShowing()) {
+		CirSim.typeScrollPopup.doDeltaY(e.getDeltaY());
+		return;
+	    }
+	    CirSim.typeScrollPopup = new TypeScrollPopup(
+		e.getNativeEvent().getClientX(), e.getNativeEvent().getClientY(),
+		e.getDeltaY(), this, app);
+	}
+
 	int gsize, gwidth, gwidth2, gheight, hs2;
 	void setSize(int s) {
 	    gsize = s;
@@ -212,9 +226,19 @@ abstract class GateElm extends CircuitElm {
 		// (2026-09-19)
 		double bx = andShaped ? 0 : backCurveX(hs*i0, hs2, ww*2.);
 		double inGateOff = icircles != null ? bx - 8 : bx;
-		inGates[i] = interpPoint(lead1,  lead2,  inGateOff/(ww*2.)+adj, hs*i0);
+		// ww is 0 for one frame at the very start of placing a new gate
+		// (before the first mouse-move, point1==point2 so dn==0, and ww
+		// gets clamped down to 0 above). lead1==lead2 at that instant too,
+		// so the fraction value is geometrically irrelevant -- but dividing
+		// by ww*2.==0 produces +-Infinity/NaN, which NaN-poisons the point
+		// through interpPoint's 0-length multiply and makes that pin/bubble
+		// silently fail to draw for that one frame (fixes itself on the next
+		// redraw once ww is nonzero again). Guard the division instead of
+		// relying on the zero-length multiply to absorb it. (2026-10-10)
+		double wwlen = ww*2.;
+		inGates[i] = interpPoint(lead1,  lead2,  wwlen == 0 ? adj : inGateOff/wwlen+adj, hs*i0);
 		if (icircles != null)
-		    icircles[i] = interpPoint(lead1, lead2,  (bx-4)/(ww*2.), hs*i0);
+		    icircles[i] = interpPoint(lead1, lead2,  wwlen == 0 ? 0 : (bx-4)/wwlen, hs*i0);
 	    }
 	    setBbox(point1, point2, hs2);
 	    if (hasSchmittInputs())
@@ -252,8 +276,16 @@ abstract class GateElm extends CircuitElm {
 		}
 		if (this instanceof XorGateElm || this instanceof XnorGateElm) {
 		    double ww2 = (ww == 0) ? dn*2 : ww*2;
-		    interpPoint2(lead1, lead2, triPoints[8], triPoints[9], -.05-8/ww2, hs2);
-		    interpPoint(lead1, lead2, triPoints[10], .1-8/ww2);
+		    // Pre-existing fallback (ww==0 ? dn*2 : ...) doesn't actually
+		    // avoid the division below: at the very start of placing a new
+		    // gate, point1==point2 so dn==0 too, leaving ww2==0 either way.
+		    // 8/ww2 then NaN-poisons these points the same way the input-
+		    // loop division did above -- same guard, same reasoning.
+		    // (2026-10-10)
+		    double frac1 = ww2 == 0 ? -.05 : -.05-8/ww2;
+		    double frac2 = ww2 == 0 ? .1 : .1-8/ww2;
+		    interpPoint2(lead1, lead2, triPoints[8], triPoints[9], frac1, hs2);
+		    interpPoint(lead1, lead2, triPoints[10], frac2);
 		}
 		gatePoly = createPolygon(triPoints);
 	    }

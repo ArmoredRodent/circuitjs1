@@ -376,6 +376,10 @@ public class Menus {
 		"Add TRIAC", "TriacElm",
 		"Add Darlington Pair (NPN)", "NDarlingtonElm",
 		"Add Darlington Pair (PNP)", "PDarlingtonElm",
+		"Add Multi-Emitter Transistor, nEBC (NPN)", "NMultiEmitterTransistorElm",
+		"Add Multi-Emitter Transistor, nEBC (PNP)", "PMultiEmitterTransistorElm",
+		"Add Multi-Collector Transistor, EBnC (NPN)", "NMultiCollectorTransistorElm",
+		"Add Multi-Collector Transistor, EBnC (PNP)", "PMultiCollectorTransistorElm",
 		"Add Varactor/Varicap", "VaractorElm",
 		"Add Tunnel Diode", "TunnelDiodeElm",
 		"Add Triode", "TriodeElm",
@@ -434,6 +438,7 @@ public class Menus {
 		"Add DAC", "DACElm",
 		"Add ADC", "ADCElm",
 		"Add VCO", "VCOElm",
+		"Add PID Controller", "PIDElm",
 		"Add Monostable", "MonostableElm"
 	});
     	mainMenuBar.addItem(SafeHtmlUtils.fromTrustedString(CheckboxMenuItem.checkBoxHtml+Locale.LS("&nbsp;</div>Analog and Hybrid Chips")), achipMenuBar);

@@ -148,6 +148,36 @@ public class KeyNames {
 	return sb.toString();
     }
 
+    // reverse of displayText(): turns a readable name ("a", "Space", "F1", "Ctrl-Shift-X")
+    // back into a stored single-char shortcut string, or null if it isn't one we know.
+    // Used to save switch keys in circuit files by name rather than by placeholder code.
+    // Accepts both the Mac and PC modifier names, so a file saved on one works on the other.
+    public static String parseName(String s) {
+	if (s == null || s.length() == 0)
+	    return null;
+	if (s.length() == 1)
+	    return s;
+	if (s.equals("Space"))
+	    return " ";
+	String prefixes[] = { "Ctrl-", "Alt-", "Opt-", "Cmd-", "Win-", "Shift-" };
+	int bits[] = { MOD_CTRL, MOD_ALT, MOD_ALT, MOD_META, MOD_META, MOD_SHIFT };
+	int mods = 0;
+	boolean found = true;
+	while (found) {
+	    found = false;
+	    for (int i = 0; i != prefixes.length; i++)
+		if (s.startsWith(prefixes[i]) && s.length() > prefixes[i].length()) {
+		    mods |= bits[i];
+		    s = s.substring(prefixes[i].length());
+		    found = true;
+		}
+	}
+	for (int k = 0; k < (1 << KEYCODE_BITS); k++)
+	    if (keyLabel(k).equals(s))
+		return String.valueOf((char) (PLACEHOLDER_BASE + k + (mods << KEYCODE_BITS)));
+	return null;
+    }
+
     // text to show in the UI for a stored (single-char) shortcut string
     public static String displayText(String shortcut) {
 	if (shortcut == null || shortcut.length() != 1)

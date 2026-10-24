@@ -59,6 +59,8 @@ class EditInfo {
 	EditInfo disallowSliders() { noSliders = true; return this; }
 	EditInfo setIsColor() { isColor = true; return this; }
 	EditInfo newColumn() { newColumn = true; return this; }
+	// text field captures a key press (like Edit Shortcuts) instead of taking typed text
+	EditInfo setKeyCapture() { keyCapture = true; return this; }
 	int changeFlag(int flags, int bit) {
 	    if (checkbox.getState())
 		return flags | bit;
@@ -85,6 +87,9 @@ class EditInfo {
 	boolean noSliders;
 	boolean isColor;
 	boolean newColumn;
+	boolean keyCapture;
+	Checkbox keyButton;	// with keyCapture: optional checkbox under the key field, only
+				// enabled while a key is set (switch "Sidebar Button")
 	boolean positive;
 	boolean nonNegative;
 	double minVal, maxVal;

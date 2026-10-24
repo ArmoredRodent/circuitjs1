@@ -248,23 +248,26 @@ public class Toolbar extends FlowPanel {
 	    final MyCommand command = new MyCommand("main", info[i+1]);
 	    final String smallSvg = makeSvg(info[i], 24);
 
-	    // Change the icon of the main button to reflect the variant selected
+	    // Change the icon of the main button to reflect the variant selected.
+	    // Doesn't hide the palette: that's done on click, see below.
 	    final Runnable selectVariant = () -> {
 		iconLabel.getElement().setInnerHTML(smallSvg);
 		highlightableButtons.remove(mainCommand.getItemName());
                 highlightableButtons.put(command.getItemName(), iconLabel);
-		paletteContainer.setVisible(false);
 		mainCommand.setItemName(command.getItemName());
 	    };
 
 	    // Add click handler to update the main button and execute the command
 	    variantButton.addClickHandler(event -> {
 		selectVariant.run();
+		paletteContainer.setVisible(false);
 		command.execute();  // Execute the corresponding command for the selected variant
 	    });
 
 	    // pressing and dragging (rather than just clicking) a variant drops that
-	    // variant directly, instead of switching modes
+	    // variant directly, instead of switching modes.  The palette must stay
+	    // visible here: hiding it on mousedown moves the mouseup off this button,
+	    // so the browser never fires the click and the mode never changes.
 	    variantButton.addMouseDownHandler(mde -> {
 		if (mde.getNativeButton() == NativeEvent.BUTTON_LEFT) {
 		    selectVariant.run();

@@ -1,0 +1,9 @@
+<cir f="3" ts="1e-8" ic="10.20027730826997" cb="50" pb="50" vr="5" mts="5e-11">
+  <x x="-153 511 464 703" f="4" si="24" te="Bug: Add short cut keys to main menu\n\nChanges exist in RMB menu, but not in Dropdown Menus.\nReinforces Muscle memory. Personalization.\n\nOptions - Shortcuts and Add shortcut. \n\nStatus: Works - Testing"/>
+  <DFlipFlop x="-104 776 -72 776" f="0"/>
+  <JKFlipFlop x="88 776 168 776" f="0"/>
+  <TFlipFlop x="272 776 320 776" f="0"/>
+  <x x="-69 742 -52 745" f="0" si="24" te="D"/>
+  <x x="122 741 134 744" f="0" si="24" te="J"/>
+  <x x="308 743 326 746" f="0" si="24" te="G"/>
+</cir>

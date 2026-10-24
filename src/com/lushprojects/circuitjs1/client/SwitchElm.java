@@ -32,7 +32,13 @@ class SwitchElm extends CircuitElm {
     final int FLAG_IEC = 2;
     final int FLAG_LABEL = 4;
     String label;
+    // stored like a simulator shortcut: a single char, either the typed character or a
+    // KeyNames placeholder (F-keys, Ctrl-<key>, etc). Saved in files by readable name.
     String keyShortcut;
+    int heldKeyCode; // keyCode that pressed this (momentary) switch, so key-up can release it
+    // 0 = no sidebar button; otherwise this key gets a button in the sidebar, and the number
+    // is its place in the button row (buttons are listed in the order they were added)
+    int buttonOrder;
     
     public SwitchElm(int xx, int yy) {
 	super(xx, yy);
@@ -77,7 +83,9 @@ class SwitchElm extends CircuitElm {
 	if (label != null)
             XMLSerializer.dumpAttr(elem, "lab", label);
 	if (keyShortcut != null)
-	    XMLSerializer.dumpAttr(elem, "key", keyShortcut);
+	    XMLSerializer.dumpAttr(elem, "key", KeyNames.displayText(keyShortcut));
+	if (keyShortcut != null && buttonOrder > 0)
+	    XMLSerializer.dumpAttr(elem, "btn", buttonOrder);
 	if (resistance != 0)
 	    XMLSerializer.dumpAttr(elem, "r", resistance);
     }
@@ -87,7 +95,8 @@ class SwitchElm extends CircuitElm {
         position = xml.parseIntAttr("p", position);
         momentary = xml.parseBooleanAttr("mm", momentary);
         label = xml.parseStringAttr("lab", label);
-        keyShortcut = xml.parseStringAttr("key", keyShortcut);
+        keyShortcut = KeyNames.parseName(xml.parseStringAttr("key", null));
+        buttonOrder = xml.parseIntAttr("btn", 0);
         resistance = xml.parseDoubleAttr("r", 0);
     }
 
@@ -271,15 +280,29 @@ class SwitchElm extends CircuitElm {
 
     // helper methods for keyboard shortcut edit field, usable by subclasses
     EditInfo getKeyShortcutEditInfo() {
-	return new EditInfo("Keyboard Shortcut", keyShortcut == null ? "" : keyShortcut);
+	EditInfo ei = new EditInfo("Keyboard Shortcut",
+		keyShortcut == null ? "" : KeyNames.displayText(keyShortcut)).setKeyCapture();
+	ei.keyButton = new Checkbox("Sidebar Button", keyShortcut != null && buttonOrder > 0);
+	ei.keyButton.setEnabled(keyShortcut != null);
+	return ei;
     }
 
     void setKeyShortcutEditValue(EditInfo ei) {
-	String s = ei.textf.getText().trim();
-	if (s.length() == 0)
-	    keyShortcut = null;
-	else
-	    keyShortcut = s.substring(0, 1).toLowerCase();
+	keyShortcut = KeyNames.parseName(ei.textf.getText());
+	if (keyShortcut == null || !ei.keyButton.getState())
+	    buttonOrder = 0;
+	else if (buttonOrder == 0)
+	    buttonOrder = nextButtonOrder();	// newly added button goes at the end of the row
+    }
+
+    int nextButtonOrder() {
+	int max = 0;
+	for (int i = 0; i != sim.elmList.size(); i++) {
+	    CircuitElm ce = sim.elmList.get(i);
+	    if (ce instanceof SwitchElm)
+		max = Math.max(max, ((SwitchElm) ce).buttonOrder);
+	}
+	return max + 1;
     }
 
     void addRoutingObstacle(WireRouter router) {

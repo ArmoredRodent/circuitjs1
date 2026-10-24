@@ -83,6 +83,12 @@ public class MouseManager implements MouseDownHandler, MouseMoveHandler, MouseUp
     public boolean dragging;
     public double wheelSensitivity = 1;
     public CircuitElm dragElm, menuElm;
+    // daisy-chained lines (LineElm.daisyChain): after a line is finished the next one starts
+    // at its end and follows the mouse (button up); each click fixes a segment, Esc drops
+    // the pending one
+    boolean lineChain;
+    // mouse offset from the grabbed shape's first point, so a moved shape can snap by itself
+    int grabDX, grabDY;
     private CircuitElm mouseElm = null;
     public boolean didSwitch = false;
     public int mousePost = -1;
@@ -123,10 +129,13 @@ public class MouseManager implements MouseDownHandler, MouseMoveHandler, MouseUp
 	var lastTap;
 	var tmout;
 	var lastScale;
+	var startX, startY;	// where the current touch began, for long-press drift tolerance
 
 	cv.addEventListener("touchstart", function (e) {
         	mousePos = getTouchPos(cv, e);
   		var touch = e.touches[0];
+  		startX = touch.clientX;
+  		startY = touch.clientY;
 
   		var etype = "mousedown";
   		lastScale = 1;
@@ -161,9 +170,12 @@ public class MouseManager implements MouseDownHandler, MouseMoveHandler, MouseUp
 	}, false);
 	cv.addEventListener("touchmove", function (e) {
   		e.preventDefault();
-  		clearTimeout(tmout);
   		var touch1 = e.touches[0];
   		var touch2 = e.touches[e.touches.length-1];
+  		// a fingertip always wobbles a little; only cancel the long press on a real move
+  		// (or a second finger), otherwise it almost never fires
+  		if (e.touches.length > 1 || Math.hypot(touch1.clientX-startX, touch1.clientY-startY) > 10)
+  		    clearTimeout(tmout);
 	        if (e.touches.length > 1) {
   		    var newScale = Math.hypot(touch1.clientX-touch2.clientX, touch1.clientY-touch2.clientY);
 	            mm.@com.lushprojects.circuitjs1.client.MouseManager::zoomCircuit(D)(40*(Math.log(newScale)-Math.log(lastScale)));
@@ -187,7 +199,16 @@ public class MouseManager implements MouseDownHandler, MouseMoveHandler, MouseUp
 
     }-*/;
 
+    // Long press and double-tap are swapped for scopes (docked or floating): a long press over a
+    // scope edits the element it's probing, a double-tap opens the scope popup (see onDoubleClick).
     void longPress() {
+	if (sim.scopeManager.scopeSelected != -1 || mouseElm instanceof ScopeElm) {
+	    // docked scope: mouseElm is already the probed element; floating: ask the ScopeElm's scope
+	    CircuitElm target = (mouseElm instanceof ScopeElm) ? ((ScopeElm) mouseElm).elmScope.getElm() : mouseElm;
+	    if (target != null && !(target instanceof SwitchElm) && !ui.isReadOnly() && !sim.dialogIsShowing())
+		sim.commands.doEdit(target);
+	    return;
+	}
 	doPopupMenu();
     }
 
@@ -228,6 +249,7 @@ public class MouseManager implements MouseDownHandler, MouseMoveHandler, MouseUp
     void beginToolbarDrag(String className, int clientX, int clientY) {
 	if (ui.isReadOnly() || sim.dialogIsShowing())
 	    return;
+	cancelLineChain();
 	toolbarDragClass = className;
 	toolbarDragStartX = clientX;
 	toolbarDragStartY = clientY;
@@ -298,6 +320,7 @@ public class MouseManager implements MouseDownHandler, MouseMoveHandler, MouseUp
 		splitAt(dragElm.x2, dragElm.y2);
 		ui.elmList.addElement(dragElm);
 		dragElm.draggingDone();
+		BoxElm.sortBoxes(sim, ui.elmList);
 		sim.undoManager.writeRecoveryToStorage();
 		sim.unsavedChanges = true;
 		sim.needAnalyze();
@@ -352,6 +375,7 @@ public class MouseManager implements MouseDownHandler, MouseMoveHandler, MouseUp
     	}
     	boolean changed = false;
     	if (dragElm != null) {
+    	    ShapeElm.shiftLock = e.isShiftKeyDown();
     	    dragElm.drag(gx, gy);
     	    // now that we're actually dragging out a new element, don't leave whatever
     	    // was hovered before still looking highlighted underneath it
@@ -372,7 +396,10 @@ public class MouseManager implements MouseDownHandler, MouseMoveHandler, MouseUp
     		break;
     	case MODE_DRAG_POST:
     		if (mouseElm != null) {
-    		    dragPost(snapGrid(gx), snapGrid(gy), e.isShiftKeyDown());
+    		    if (mouseElm instanceof ShapeElm && !e.isShiftKeyDown())
+    			dragPost(gx, gy, false);	// the shape snaps itself
+    		    else
+    			dragPost(snapGrid(gx), snapGrid(gy), e.isShiftKeyDown());
     		    changed = true;
     		}
     		break;
@@ -490,6 +517,13 @@ public class MouseManager implements MouseDownHandler, MouseMoveHandler, MouseUp
     	int dx = x-dragGridX;
   //  	console("dx="+dx+"dragGridx="+dragGridX);
     	int dy = y-dragGridY;
+    	// a grabbed box/line snaps its own first point per its snap setting;
+    	// anything else selected along with it moves by the same amount
+    	if (mouseElm instanceof ShapeElm && onlyGraphicsElmsSelected()) {
+    	    ShapeElm se = (ShapeElm) mouseElm;
+    	    dx = se.snapCoord(x-grabDX) - se.x;
+    	    dy = se.snapCoord(y-grabDY) - se.y;
+    	}
     	if (dx == 0 && dy == 0) {
     	    // don't leave mouseElm selected if we selected it above
     	    if (me)
@@ -540,6 +574,10 @@ public class MouseManager implements MouseDownHandler, MouseMoveHandler, MouseUp
     		draggingPost =
     				(Graphics.distanceSq(mouseElm.x , mouseElm.y , x, y) >
     				Graphics.distanceSq(mouseElm.x2, mouseElm.y2, x, y)) ? 1 : 0;
+    	}
+    	if (!all && mouseElm instanceof ShapeElm) {
+    	    ((ShapeElm) mouseElm).movePostTo(draggingPost, x, y);
+    	    return;
     	}
     	int dx = x-dragGridX;
     	int dy = y-dragGridY;
@@ -752,6 +790,14 @@ public class MouseManager implements MouseDownHandler, MouseMoveHandler, MouseUp
     	mouseCursorY=e.getY();
     	if (mouseDragging) {
     		mouseDragged(e);
+    		return;
+    	}
+    	if (lineChain && dragElm != null) {
+    		if (sim.circuitArea.contains(e.getX(), e.getY())) {
+    		    ShapeElm.shiftLock = e.isShiftKeyDown();
+    		    dragElm.drag(inverseTransformX(e.getX()), inverseTransformY(e.getY()));
+    		    sim.repaint();
+    		}
     		return;
     	}
     	mouseSelect(e);
@@ -1027,6 +1073,12 @@ public class MouseManager implements MouseDownHandler, MouseMoveHandler, MouseUp
 
     public void onDoubleClick(DoubleClickEvent e){
     	e.preventDefault();
+    	// double-click on a scope (docked or floating) opens the scope popup (export etc.) instead
+    	// of editing the probed element, which can already be double-clicked directly
+    	if (sim.scopeManager.scopeSelected != -1 || mouseElm instanceof ScopeElm) {
+    	    doPopupMenu();
+    	    return;
+    	}
     	if (mouseElm == null)
     	    return;
     	if (mouseElm instanceof CustomCompositeElm) {
@@ -1092,8 +1144,8 @@ public class MouseManager implements MouseDownHandler, MouseMoveHandler, MouseUp
 		tempMouseMode = MODE_DRAG_COLUMN;
 	    else if (e.isAltKeyDown() && e.isShiftKeyDown())
 		tempMouseMode = MODE_DRAG_ROW;
-	    else if (e.isShiftKeyDown())
-		tempMouseMode = MODE_SELECT;
+	    else if (e.isShiftKeyDown() && !lineChain)
+		tempMouseMode = MODE_SELECT;	// (but while chaining, Shift is the angle lock)
 	    else if (e.isAltKeyDown())
 		tempMouseMode = MODE_DRAG_ALL;
 	    else if (e.isControlKeyDown() || e.isMetaKeyDown())
@@ -1104,6 +1156,9 @@ public class MouseManager implements MouseDownHandler, MouseMoveHandler, MouseUp
 
 	if (ui.isReadOnly() && tempMouseMode != MODE_DRAG_ALL)
 	    tempMouseMode = MODE_SELECT;
+
+	if (lineChain && tempMouseMode != MODE_ADD_ELM)
+	    cancelLineChain();
 
 	if (!(sim.dialogIsShowing()) && ((sim.scopeManager.scopeSelected != -1 && sim.scopeManager.scopes[sim.scopeManager.scopeSelected].cursorInSettingsWheel()) ||
 		( sim.scopeManager.scopeSelected == -1 && mouseElm instanceof ScopeElm && ((ScopeElm)mouseElm).elmScope.cursorInSettingsWheel()))){
@@ -1147,7 +1202,8 @@ public class MouseManager implements MouseDownHandler, MouseMoveHandler, MouseUp
 	}
 
 	// IES - Grab resize handles in select mode if they are far enough apart and you are on top of them
-	if (tempMouseMode == MODE_SELECT && mouseElm!=null && !ui.isReadOnly() &&
+	// (not with shift, which means add/remove from selection)
+	if (tempMouseMode == MODE_SELECT && mouseElm!=null && !ui.isReadOnly() && !e.isShiftKeyDown() &&
 		mouseElm.getHandleGrabbedClose(gx, gy, POSTGRABSQ, MINPOSTGRABSIZE) >=0 &&
 		!anySelectedButMouse())
 	    tempMouseMode = MODE_DRAG_POST;
@@ -1157,6 +1213,10 @@ public class MouseManager implements MouseDownHandler, MouseMoveHandler, MouseUp
 
 	sim.undoManager.pushUndo();
 	initDragGridX = gx;
+	if (mouseElm != null) {
+	    grabDX = gx - mouseElm.x;
+	    grabDY = gy - mouseElm.y;
+	}
 	initDragGridY = gy;
 	dragging = true;
 
@@ -1197,11 +1257,19 @@ public class MouseManager implements MouseDownHandler, MouseMoveHandler, MouseUp
 	if (!sim.circuitArea.contains(e.getX(), e.getY()))
 	    return;
 
+	// chained line already following the mouse: this click just fixes its end
+	if (lineChain && dragElm != null) {
+	    ShapeElm.shiftLock = e.isShiftKeyDown();
+	    dragElm.drag(gx, gy);
+	    return;
+	}
 	try {
 	    dragElm = sim.constructElement(ui.mouseModeStr, x0, y0);
 	} catch (Exception ex) {
 	    sim.debugger();
 	}
+	if (dragElm instanceof ShapeElm)
+	    ((ShapeElm) dragElm).placeStart(gx, gy);	// shapes snap (or not) themselves
 
 	sim.updateToolbar();
     }
@@ -1235,15 +1303,48 @@ public class MouseManager implements MouseDownHandler, MouseMoveHandler, MouseUp
     public void onMouseUp(MouseUpEvent e) {
     	e.preventDefault();
 
-    	// click to clear selection (but not on a right-click, e.g. from a context-menu mouseup)
-    	if (tempMouseMode == MODE_SELECT && selectedArea == null && e.getNativeButton() == NativeEvent.BUTTON_LEFT)
-    	    clearSelection();
+    	// click to clear selection (but not on a right-click, e.g. from a context-menu mouseup).
+    	// shift-click on a component toggles it in/out of the selection instead
+    	if (tempMouseMode == MODE_SELECT && selectedArea == null && e.getNativeButton() == NativeEvent.BUTTON_LEFT) {
+    	    if (e.isShiftKeyDown() && mouseElm != null) {
+    		mouseElm.setSelected(!mouseElm.isSelected());
+    		enableDisableMenuItems();
+    	    } else
+    		clearSelection();
+    	}
 
     	// cmd-click = split wire
     	if (tempMouseMode == MODE_DRAG_POST && draggingPost == -1)
     	    doSplit(mouseElm);
 
+    	// a line that's about to be added keeps the chain going from its end
+    	CircuitElm chainFrom = null;
+    	if (LineElm.daisyChain && dragElm instanceof LineElm && tempMouseMode == MODE_ADD_ELM &&
+    		e.getNativeButton() == NativeEvent.BUTTON_LEFT && !dragElm.creationFailed())
+    	    chainFrom = dragElm;
+    	lineChain = false;
+
     	endDrag();
+
+    	if (chainFrom != null) {
+    	    dragElm = sim.constructElement("LineElm", chainFrom.x2, chainFrom.y2);
+    	    dragElm.x = dragElm.x2 = chainFrom.x2;	// already snapped; start exactly on it
+    	    dragElm.y = dragElm.y2 = chainFrom.y2;
+    	    tempMouseMode = MODE_ADD_ELM;
+    	    lineChain = true;
+    	}
+    }
+
+    // drop the pending chained line (Esc, or a change of mode)
+    void cancelLineChain() {
+    	if (!lineChain)
+    	    return;
+    	lineChain = false;
+    	if (dragElm != null)
+    	    dragElm.delete();
+    	dragElm = null;
+    	tempMouseMode = mouseMode;
+    	sim.repaint();
     }
 
     // common cleanup for ending a drag, whether via mouseup or the mouse leaving the canvas
@@ -1252,6 +1353,7 @@ public class MouseManager implements MouseDownHandler, MouseMoveHandler, MouseUp
     	Scope.dragStartTime = -1;
     	Scope.endDragPlotY();
 
+    	boolean moved = (tempMouseMode == MODE_DRAG_POST || tempMouseMode == MODE_DRAG_SELECTED);
     	tempMouseMode = mouseMode;
     	selectedArea = null;
     	dragging = false;
@@ -1290,6 +1392,8 @@ public class MouseManager implements MouseDownHandler, MouseMoveHandler, MouseUp
 			sim.updateToolbar();
     		}
     	}
+    	if (circuitChanged || moved)
+    	    BoxElm.sortBoxes(sim, ui.elmList);
     	if (circuitChanged) {
     	    sim.needAnalyze();
     	    sim.undoManager.pushUndo();

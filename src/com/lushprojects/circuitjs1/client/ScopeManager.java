@@ -45,6 +45,63 @@ public class ScopeManager {
     public MenuBar selectScopeMenuBar;
     public Vector<MenuItem> selectScopeMenuItems;
 
+    boolean alignNeg[] = new boolean[Scope.UNITS_COUNT];
+    boolean alignPos[] = new boolean[Scope.UNITS_COUNT];
+
+    // Align Y: docked scopes with Align Y on that show the same unit share one vertical range,
+    // so the same value sits at the same height in each.  Called once per frame, before the
+    // docked scopes draw.  A scope with no partner is left alone (normal behaviour).
+    void alignScopes() {
+	if (sim.scopeElmArr != null)
+	    for (ScopeElm se : sim.scopeElmArr)
+		se.elmScope.aligned = false;	// floating scopes never align
+	int units[] = new int[scopeCount];
+	int count[] = new int[Scope.UNITS_COUNT];
+	for (int i = 0; i != scopeCount; i++) {
+	    scopes[i].aligned = false;
+	    units[i] = scopes[i].alignUnits();
+	    if (units[i] >= 0)
+		count[units[i]]++;
+	}
+	for (int u = 0; u != Scope.UNITS_COUNT; u++) {
+	    if (count[u] < 2) {
+		alignNeg[u] = alignPos[u] = false;
+		continue;
+	    }
+	    double sc = 0, mx = -1e8, mn = 1e8;
+	    for (int i = 0; i != scopeCount; i++)
+		if (units[i] == u) {
+		    Scope s = scopes[i];
+		    s.calcOwnRange(u);
+		    sc = Math.max(sc, s.scale[u]);
+		    mx = Math.max(mx, s.maxValue);
+		    mn = Math.min(mn, s.minValue);
+		}
+	    // Zero goes on the bottom if nothing is below zero, at the top if nothing is above,
+	    // otherwise in the middle.  Switch at 5% of the scale and back at 2.5%, so a trace
+	    // sitting near zero doesn't make it flicker.
+	    alignNeg[u] = mn < -sc * (alignNeg[u] ? .025 : .05);
+	    alignPos[u] = mx >  sc * (alignPos[u] ? .025 : .05);
+	    for (int i = 0; i != scopeCount; i++)
+		if (units[i] == u) {
+		    Scope s = scopes[i];
+		    s.aligned = true;
+		    s.scale[u] = sc;
+		    s.alignMax = mx;
+		    s.alignMin = mn;
+		    s.alignNeg = alignNeg[u];
+		    s.alignPos = alignPos[u];
+		}
+	}
+    }
+
+    boolean isDocked(Scope s) {
+	for (int i = 0; i != scopeCount; i++)
+	    if (scopes[i] == s)
+		return true;
+	return false;
+    }
+
     ScopeManager(CirSim sim) {
 	this.sim = sim;
 	scopes = new Scope[20];

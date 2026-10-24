@@ -634,6 +634,16 @@ public class CirSim implements NativePreviewHandler {
             return (CircuitElm) new NJfetElm(x1, y1);
     	if (n == "DarlingtonElm")
             return (CircuitElm) new NDarlingtonElm(x1, y1);
+    	// same reason as DarlingtonElm above: MultiEmitterTransistorElm itself has no
+    	// plain (int,int) constructor (only NMultiEmitterTransistorElm/PMultiEmitterTransistorElm
+    	// do), but XML loading resolves an element by its getDumpClass() name -- the shared
+    	// base class -- and calls constructElement(name, 0, 0) before undumpXml() restores the
+    	// real pnp value. Without this, XML file loading crashes with a null element.
+    	if (n == "MultiEmitterTransistorElm")
+            return (CircuitElm) new NMultiEmitterTransistorElm(x1, y1);
+    	// same reason again, for the multi-collector (EBnC) mirror of the above.
+    	if (n == "MultiCollectorTransistorElm")
+            return (CircuitElm) new NMultiCollectorTransistorElm(x1, y1);
 
 	// if you take out RingCounterElm, it will break subcircuits
     	// if you take out DecadeElm, it will break the menus and people's saved shortcuts

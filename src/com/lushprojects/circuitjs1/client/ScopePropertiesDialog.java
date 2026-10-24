@@ -58,11 +58,14 @@ RadioButton autoButton, maxButton, manualButton;
 RadioButton acButton, dcButton;
 CheckBox scaleBox, voltageBox, currentBox, powerBox, peakBox, negPeakBox, p2pBox, freqBox, spectrumBox, manualScaleBox;
 CheckBox rmsBox, dutyBox, viBox, xyBox, resistanceBox, chargeBox, ibBox, icBox, ieBox, vbeBox, vbcBox, vceBox, vceIcBox, logSpectrumBox, averageBox;
-CheckBox elmInfoBox, phaseAngleBox;
+CheckBox elmInfoBox, phaseAngleBox, xyOriginBox, xyAlignBox, alignYBox;
+Vector<ScopeCheckBox> extraBoxes = new Vector<ScopeCheckBox>();
+int extraValues[];
 TextBox labelTextBox, manualScaleTextBox, divisionsTextBox;
 Button applyButton, scaleUpButton, scaleDownButton;
 Scrollbar speedBar, positionBar, trailBar;
 Label trailLabel;
+boolean trailSync;	// set while the dialog moves the trail slider itself
 Scope scope;
 Grid grid, vScaleGrid, hScaleGrid;
 int nx, ny;
@@ -301,6 +304,9 @@ expandingLabel xyPlotsLabel;
 		vModep.add(maxButton);
 		vModep.add(manualButton);
 		fp.add(vModep);
+		alignYBox = new ScopeCheckBox(Locale.LS("Align Y"), "alignY");
+		alignYBox.addValueChangeHandler(this);
+		fp.add(alignYBox);
 		channelSettingsp = new VerticalPanel();
 		channelButtonsp = new FlowPanel();
 		updateChannelButtons();
@@ -543,8 +549,10 @@ expandingLabel xyPlotsLabel;
 		CircuitElm elm = scope.getSingleElm();
 		boolean transistor = elm != null && elm instanceof TransistorElm;
 		boolean capacitor = elm != null && elm instanceof CapacitorElm;
+		extraValues = (elm != null) ? elm.getExtraScopeValues() : null;
+		int extraRows = (extraValues == null) ? 0 : (extraValues.length+2)/3;
 		if (!transistor) {
-		    grid = new Grid(capacitor ? 14 : 13, 3);
+		    grid = new Grid((capacitor ? 15 : 14) + extraRows, 3);
 		    gridLabels = new labelledGridManager(grid);
 		    gridLabels.addLabel(Locale.LS("Plots"), displayAll);
 		    addItemToGrid(grid, voltageBox = new ScopeCheckBox(Locale.LS("Show Voltage"), "showvoltage"));
@@ -552,7 +560,7 @@ expandingLabel xyPlotsLabel;
 		    addItemToGrid(grid, currentBox = new ScopeCheckBox(Locale.LS("Show Current"), "showcurrent"));
 		    currentBox.addValueChangeHandler(this);
 		} else {
-		    grid = new Grid(15,3);
+		    grid = new Grid(16,3);
 		    gridLabels = new labelledGridManager(grid);
 		    gridLabels.addLabel(Locale.LS("Plots"), displayAll);
 		    addItemToGrid(grid, ibBox = new ScopeCheckBox(Locale.LS("Show Ib"), "showib"));
@@ -567,6 +575,16 @@ expandingLabel xyPlotsLabel;
 		    vbcBox.addValueChangeHandler(this);
 		    addItemToGrid(grid, vceBox = new ScopeCheckBox(Locale.LS("Show Vce"), "showvce"));
 		    vceBox.addValueChangeHandler(this);
+		}
+		// element-defined extra values (e.g. PID terms)
+		if (extraValues != null) {
+		    for (int i = 0; i != extraValues.length; i++) {
+			int v = extraValues[i];
+			ScopeCheckBox cb = new ScopeCheckBox("Show " + elm.getExtraScopeValueName(v), "showextra:" + v);
+			cb.addValueChangeHandler(this);
+			addItemToGrid(grid, cb);
+			extraBoxes.add(cb);
+		    }
 		}
 		addItemToGrid(grid, powerBox = new ScopeCheckBox(Locale.LS("Show Power Consumed"), "showpower"));
 		powerBox.addValueChangeHandler(this);
@@ -587,11 +605,18 @@ expandingLabel xyPlotsLabel;
 		viBox.addValueChangeHandler(this);
 		addItemToGrid(grid, xyBox = new ScopeCheckBox(Locale.LS("Plot X/Y"), "plotxy"));
 		xyBox.addValueChangeHandler(this);
+		addItemToGrid(grid, xyOriginBox = new ScopeCheckBox(Locale.LS("Include Origin"), "xyorigin"));
+		xyOriginBox.addValueChangeHandler(this);
+		addItemToGrid(grid, xyAlignBox = new ScopeCheckBox(Locale.LS("Align X"), "xyalignx"));
+		xyAlignBox.addValueChangeHandler(this);
 		Grid trailGrid = new Grid(1, 3);
-		trailGrid.setWidget(0, 0, new Label(Locale.LS("Trail Persistence (time steps)")));
-		// Logarithmic: slider 0 = old default; slider n -> round(10^(n/10)) timesteps
-		trailBar = new Scrollbar(Scrollbar.HORIZONTAL, trailStepsToSlider(scope.plot2d.trailPersistence), 1, 0, 61, new Command() {
+		trailGrid.setWidget(0, 0, new Label(Locale.LS("Trail Persistence")));
+		// slider 0 = default (frame-based fade); 1..TRAIL_MAX = 1/100 to 10x the scope's
+		// horizontal time span, logarithmic, 20 steps per decade
+		trailBar = new Scrollbar(Scrollbar.HORIZONTAL, trailTimeToSlider(scope.plot2d.trailTime()), 1, 0, TRAIL_MAX, new Command() {
 		    public void execute() {
+			if (trailSync)
+			    return;
 			scope.plot2d.trailPersistence = trailSliderToSteps(trailBar.getValue());
 			setTrailLabel();
 		    }
@@ -759,21 +784,40 @@ expandingLabel xyPlotsLabel;
 	    scopeSpeedLabel.setText(CircuitElm.getUnitText(scope.calcGridStepX(), "s")+"/div");
 	}
 
-	// Logarithmic mapping: slider 0 = old default (0 steps); slider n -> round(10^(n/10))
-	static int trailSliderToSteps(int v) {
-	    if (v <= 0) return 0;
-	    return (int) Math.round(Math.pow(10, v / 10.0));
+	static final int TRAIL_MAX = 61;
+
+	// scope's horizontal time span (same as the X/Y auto-fit window)
+	double trailSpan() {
+	    return scope.plot2d.fitWindow();
 	}
-	static int trailStepsToSlider(int steps) {
-	    if (steps <= 0) return 0;
-	    return (int) Math.round(Math.log10(steps) * 10);
+
+	// slider 1..TRAIL_MAX -> span * 10^((v-1)/20 - 2), stored as timesteps; 0 = default
+	int trailSliderToSteps(int v) {
+	    if (v <= 0) return 0;
+	    double t = trailSpan() * Math.pow(10, (v - 1) / 20.0 - 2);
+	    return Math.max(1, (int) Math.round(t / sim.sim.maxTimeStep));
+	}
+
+	int trailTimeToSlider(double t) {
+	    if (t <= 0) return 0;
+	    int v = 1 + (int) Math.round(20 * (Math.log10(t / trailSpan()) + 2));
+	    return Math.max(1, Math.min(TRAIL_MAX, v));
 	}
 
 	void setTrailLabel() {
-	    if (scope.plot2d.trailPersistence <= 0)
-		trailLabel.setText(Locale.LS("default"));
-	    else
-		trailLabel.setText(CircuitElm.getUnitText(scope.plot2d.trailPersistence * sim.sim.maxTimeStep, "s"));
+	    if (scope.plot2d.trailPersistence <= 0) {
+		double t = scope.plot2d.defaultTrailTime();
+		trailLabel.setText(Locale.LS("default") + (t > 0 ? " (" + CircuitElm.getUnitText(t, "s") + ")" : ""));
+	    } else
+		trailLabel.setText(CircuitElm.getUnitText(scope.plot2d.trailTime(), "s"));
+	}
+
+	// put the slider where the current trail actually is (its range moves with the horizontal scale)
+	void updateTrailUi() {
+	    trailSync = true;
+	    trailBar.setValue(trailTimeToSlider(scope.plot2d.trailTime()));
+	    trailSync = false;
+	    setTrailLabel();
 	}
 
 	void addItemToGrid(Grid g, FocusWidget scb) {
@@ -791,10 +835,15 @@ expandingLabel xyPlotsLabel;
 	    if (scope.speed != newsp)
 		scope.setSpeed(newsp);
 	    setScopeSpeedLabel();
+	    updateTrailUi();
 	}
 	
 	void updateUi() {
 	    vModep.setVisible(vScaleLabel.expanded);
+	    // Align Y is for docked time-domain scopes only
+	    alignYBox.setVisible(vScaleLabel.expanded && scope.app.scopeManager.isDocked(scope) && !scope.plot2d.enabled);
+	    alignYBox.setValue(scope.alignY);
+	    alignYBox.setEnabled(!scope.isManualScale());
 	    gridLabels.updateRowVisibility();
 	    hScaleGrid.getRowFormatter().setVisible(1, hScaleLabel.expanded);
 	    speedBar.setValue(10-(int)Math.round(Math.log(scope.speed)/Math.log(2)));
@@ -818,10 +867,16 @@ expandingLabel xyPlotsLabel;
 	    rmsBox.setEnabled(scope.canShowRMS());
 	    viBox.setValue(scope.plot2d.enabled && !scope.plot2d.plotXY);
 	    xyBox.setValue(scope.plot2d.plotXY);
+	    xyOriginBox.setValue(scope.plot2d.includeOrigin);
+	    xyOriginBox.setEnabled(scope.plot2d.enabled && !scope.isManualScale());
+	    xyAlignBox.setValue(scope.plot2d.alignX);
+	    xyAlignBox.setEnabled(scope.plot2d.enabled && !scope.isManualScale());
 	    resistanceBox.setValue(scope.hasPlotValue(Scope.VAL_R));
 	    resistanceBox.setEnabled(scope.canShowResistance());
 	    if (chargeBox != null)
 		chargeBox.setValue(scope.hasPlotValue(Scope.VAL_CHARGE));
+	    for (int i = 0; i != extraBoxes.size(); i++)
+		extraBoxes.get(i).setValue(scope.hasPlotValue(extraValues[i]));
 	    if (vbeBox != null) {
                 ibBox.setValue(scope.hasPlotValue(Scope.VAL_IB));
                 icBox.setValue(scope.hasPlotValue(Scope.VAL_IC));
@@ -924,6 +979,8 @@ expandingLabel xyPlotsLabel;
 	    // dialog and the scope may automatically rescale
 	    if (! scope.isManualScale() )
 		updateManualScaleUi();
+	    if (scope.plot2d.trailPersistence <= 0)
+		setTrailLabel();	// default trail time is measured live
 	}
 	
 	public void closeDialog()

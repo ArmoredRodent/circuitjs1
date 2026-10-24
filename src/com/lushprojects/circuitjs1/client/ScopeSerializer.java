@@ -121,6 +121,12 @@ class ScopeSerializer {
 	    xmlElm.setAttribute("x", scope.text);
 	if (scope.plot2d.trailPersistence != ScopePlot2d.DEFAULT_TRAIL_PERSISTENCE)
 	    XMLSerializer.dumpAttr(xmlElm, "tp", scope.plot2d.trailPersistence);
+	if (!scope.plot2d.includeOrigin)
+	    XMLSerializer.dumpAttr(xmlElm, "xyo", 0);
+	if (scope.plot2d.alignX)
+	    XMLSerializer.dumpAttr(xmlElm, "xya", 1);
+	if (scope.alignY)
+	    XMLSerializer.dumpAttr(xmlElm, "ya", 1);
     }
 
     void undumpXml(XMLDeserializer xml) {
@@ -137,6 +143,9 @@ class ScopeSerializer {
 	scope.manDivisions = xml.parseIntAttr("md", 8);
 	scope.text = xml.parseStringAttr("x", (String) null);
 	scope.plot2d.trailPersistence = xml.parseIntAttr("tp", ScopePlot2d.DEFAULT_TRAIL_PERSISTENCE);
+	scope.plot2d.includeOrigin = xml.parseIntAttr("xyo", 1) != 0;
+	scope.plot2d.alignX = xml.parseIntAttr("xya", 0) != 0;
+	scope.alignY = xml.parseIntAttr("ya", 0) != 0;
 	// All of these must be read before parseChildElement() changes the XML context
 	// to a child <p> element.
 	scope.trigger.undumpXml(xml);
@@ -158,6 +167,7 @@ class ScopeSerializer {
 	    ScopePlot p = new ScopePlot(plotElm, u, val, scope.getManScaleFromMaxScale(u, false));
 	    scope.plots.add(p);
 	    p.acCoupled = (plotFlags & ScopePlot.FLAG_AC) != 0;
+	    p.hidden = (plotFlags & ScopePlot.FLAG_HIDDEN) != 0;
 	    double ms = xml.parseDoubleAttr("ms", -1);
 	    if (ms >= 0) {
 		p.manScaleSet = true;
@@ -240,6 +250,7 @@ class ScopeSerializer {
 		    }
 		    ScopePlot p = scope.plots.get(i);
 		    p.acCoupled = (plotFlags & ScopePlot.FLAG_AC) != 0;
+		    p.hidden = (plotFlags & ScopePlot.FLAG_HIDDEN) != 0;
 		    if ((flags & FLAG_PERPLOT_MAN_SCALE) != 0) {
 			p.manScaleSet = true;
 			p.manScale = Double.parseDouble(st.nextToken());

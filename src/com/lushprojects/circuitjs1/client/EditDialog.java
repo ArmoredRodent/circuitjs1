@@ -53,6 +53,11 @@ import com.google.gwt.event.dom.client.TouchEndHandler;
 import com.google.gwt.event.dom.client.TouchEndEvent;
 import com.google.gwt.event.dom.client.TouchCancelHandler;
 import com.google.gwt.event.dom.client.TouchCancelEvent;
+import com.google.gwt.event.dom.client.KeyDownHandler;
+import com.google.gwt.event.dom.client.KeyDownEvent;
+import com.google.gwt.event.dom.client.KeyPressHandler;
+import com.google.gwt.event.dom.client.KeyPressEvent;
+import com.google.gwt.event.dom.client.KeyCodes;
 
 interface Editable {
     EditInfo getEditInfo(int n);
@@ -212,7 +217,11 @@ class EditDialog extends Dialog {
 				    ei.textf.getElement().setAttribute("type", "color");
 				else
 				    ei.textf.setVisibleLength(50);
+				if (ei.keyCapture)
+				    addKeyCapture(ei);
 				vp.add(ei.textf);
+				if (ei.keyButton != null)
+				    vp.add(ei.keyButton);
 			    } else {
 				ei.textf.setText(unitString(ei));
 				vp.add(makeValueStepperRow(ei));
@@ -220,6 +229,52 @@ class EditDialog extends Dialog {
 			}
 		}
 		einfocount = i;
+	}
+
+	// Make a text field capture a key press the same way Edit Shortcuts does: plain keys
+	// come from keypress (so the typed character is used), F-keys/Home/etc and anything
+	// with Ctrl/Alt/Meta come from keydown as a placeholder. Backspace/Delete clears it.
+	// The field holds the readable name (KeyNames.displayText); parse it back with
+	// KeyNames.parseName.
+	private static void addKeyCapture(final EditInfo ei) {
+	    final TextBox text = ei.textf;
+	    text.setReadOnly(true);
+	    text.addKeyDownHandler(new KeyDownHandler() {
+		public void onKeyDown(KeyDownEvent ev) {
+		    int keyCode = ev.getNativeKeyCode();
+		    int placeholder = KeyNames.keyCodeToPlaceholder(keyCode, ev.isShiftKeyDown(),
+			    ev.isControlKeyDown(), ev.isAltKeyDown(), ev.isMetaKeyDown());
+		    if (placeholder >= 0) {
+			ev.preventDefault();
+			text.setText(KeyNames.displayText(String.valueOf((char) placeholder)));
+			keyChanged(ei);
+		    } else if (keyCode == KeyCodes.KEY_BACKSPACE || keyCode == KeyCodes.KEY_DELETE) {
+			ev.preventDefault();
+			text.setText("");
+			keyChanged(ei);
+		    }
+		}
+	    });
+	    text.addKeyPressHandler(new KeyPressHandler() {
+		public void onKeyPress(KeyPressEvent ev) {
+		    ev.preventDefault();
+		    char cc = ev.getCharCode();
+		    if (cc >= 32 && cc < 127) {
+			text.setText(KeyNames.displayText(String.valueOf(cc)));
+			keyChanged(ei);
+		    }
+		}
+	    });
+	}
+
+	// the key's checkbox (if any) is only usable while a key is set; clearing the key unticks it
+	private static void keyChanged(EditInfo ei) {
+	    if (ei.keyButton == null)
+		return;
+	    boolean hasKey = ei.textf.getText().length() > 0;
+	    ei.keyButton.setEnabled(hasKey);
+	    if (!hasKey)
+		ei.keyButton.setState(false);
 	}
 
 	// A text field with "-"/"+" buttons that step the value, so it can be tweaked without

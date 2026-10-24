@@ -44,10 +44,12 @@ class ScopePlot {
     double gridMult;
     double plotOffset;
     boolean acCoupled = false;
+    boolean hidden = false;	// unticked but still recording (element-defined values)
     double acAlpha = 0.9999; // Filter coefficient for AC coupling
     double acLastOut = 0; // Store y[i-1] term for AC coupling filter
 
     final static int FLAG_AC=1;
+    final static int FLAG_HIDDEN=2;
 
     ScopePlot(CircuitElm e, int u) {
 	elm = e;
@@ -176,6 +178,6 @@ class ScopePlot {
     }
 
     int getPlotFlags() {
-	return (acCoupled ? FLAG_AC : 0);
+	return (acCoupled ? FLAG_AC : 0) | (hidden ? FLAG_HIDDEN : 0);
     }
 }

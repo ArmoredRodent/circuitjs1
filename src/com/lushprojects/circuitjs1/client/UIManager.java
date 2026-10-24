@@ -28,6 +28,19 @@ import com.google.gwt.http.client.URL;
 import com.google.gwt.storage.client.Storage;
 import com.google.gwt.user.client.ui.Button;
 import com.google.gwt.user.client.ui.CellPanel;
+import com.google.gwt.user.client.ui.FlowPanel;
+import com.google.gwt.event.dom.client.MouseDownHandler;
+import com.google.gwt.event.dom.client.MouseDownEvent;
+import com.google.gwt.event.dom.client.MouseUpHandler;
+import com.google.gwt.event.dom.client.MouseUpEvent;
+import com.google.gwt.event.dom.client.MouseOutHandler;
+import com.google.gwt.event.dom.client.MouseOutEvent;
+import com.google.gwt.event.dom.client.TouchStartHandler;
+import com.google.gwt.event.dom.client.TouchStartEvent;
+import com.google.gwt.event.dom.client.TouchEndHandler;
+import com.google.gwt.event.dom.client.TouchEndEvent;
+import com.google.gwt.event.dom.client.TouchCancelHandler;
+import com.google.gwt.event.dom.client.TouchCancelEvent;
 import com.google.gwt.user.client.ui.DockLayoutPanel;
 import com.google.gwt.user.client.ui.Frame;
 import com.google.gwt.user.client.ui.HorizontalPanel;
@@ -309,6 +322,8 @@ public class UIManager {
 		setSimRunning(!simIsRunning());
 	    }
 	});
+	// buttons for switches in this circuit (filled in by updateSwitchButtons)
+	verticalPanel.add(switchButtonPanel = new FlowPanel());
 
 	
 /*
@@ -701,6 +716,9 @@ public class UIManager {
             mouse.tempMouseMode == MouseManager.MODE_DRAG_POST ||
             mouse.tempMouseMode == MouseManager.MODE_DRAG_SELECTED) {
             for (CircuitElm ce : elmList) {
+                // boxes and lines only show their dots while they're the ones being moved
+                if (ce instanceof ShapeElm && ce != mouse.getMouseElm() && !ce.isSelected())
+                    continue;
                 if (ce != mouse.getMouseElm() || mouse.tempMouseMode != MouseManager.MODE_DRAG_POST) {
                     g.setColor(Color.gray);
                     g.fillOval(ce.x - 3, ce.y - 3, 7, 7);
@@ -838,6 +856,7 @@ public class UIManager {
 	    ct = 0;
 	int i;
 	Scope.clearCursorInfo();
+	app.scopeManager.alignScopes();
 	for (i = 0; i != ct; i++)
 	    app.scopeManager.scopes[i].selectScope(mouse.mouseCursorX, mouse.mouseCursorY);
 	if (app.scopeElmArr != null)
@@ -995,6 +1014,7 @@ public class UIManager {
     }
 
     void setMouseMode(int mode) {
+    	mouse.cancelLineChain();
     	mouse.mouseMode = mode;
     	if ( mode == MouseManager.MODE_ADD_ELM ) {
     		setCursorStyle("cursorCross");
@@ -1039,6 +1059,130 @@ public class UIManager {
     }
 
     // ---- Keyboard ----
+
+    // ---- Sidebar switch buttons ----
+    // One button per switch keyboard shortcut whose switch has "Sidebar Button" ticked, for
+    // users without a keyboard (mobile). They belong to the circuit: rebuilt whenever it changes,
+    // so leaving the circuit removes them. Ordered by when each button was added
+    // (SwitchElm.buttonOrder). A button does what its key does; a momentary switch stays
+    // pressed while the button is held.
+    FlowPanel switchButtonPanel;
+    String switchButtonKeys = "";	// keys currently shown, to skip rebuilding when unchanged
+    static final int BUTTON_HELD = -1;	// SwitchElm.heldKeyCode for a switch pressed by a button
+
+    void updateSwitchButtons() {
+	if (switchButtonPanel == null)
+	    return;
+	// each key once, at the lowest order of the switches that use it
+	Vector<String> keys = new Vector<String>();
+	Vector<Integer> orders = new Vector<Integer>();
+	for (int i = 0; i != elmList.size(); i++) {
+	    CircuitElm ce = elmList.get(i);
+	    if (!(ce instanceof SwitchElm))
+		continue;
+	    SwitchElm se = (SwitchElm) ce;
+	    if (se.keyShortcut == null || se.buttonOrder <= 0)
+		continue;
+	    int k = keys.indexOf(se.keyShortcut);
+	    if (k >= 0) {
+		if (se.buttonOrder < orders.get(k))
+		    orders.set(k, se.buttonOrder);
+		continue;
+	    }
+	    keys.add(se.keyShortcut);
+	    orders.add(se.buttonOrder);
+	}
+	// sort by order (insertion sort, the list is tiny)
+	for (int i = 1; i < keys.size(); i++)
+	    for (int j = i; j > 0 && orders.get(j) < orders.get(j-1); j--) {
+		orders.set(j, orders.set(j-1, orders.get(j)));
+		keys.set(j, keys.set(j-1, keys.get(j)));
+	    }
+	String sig = "";
+	for (String k : keys)
+	    sig += k + "\n";
+	if (sig.equals(switchButtonKeys))
+	    return;
+	switchButtonKeys = sig;
+	switchButtonPanel.clear();
+	for (String k : keys)
+	    switchButtonPanel.add(makeSwitchButton(k));
+    }
+
+    Button makeSwitchButton(final String key) {
+	Button b = new Button();
+	b.setText(KeyNames.displayText(key));
+	b.setStylePrimaryName("topButton");
+	b.addMouseDownHandler(new MouseDownHandler() {
+	    public void onMouseDown(MouseDownEvent e) { pressSwitchButton(key); }
+	});
+	b.addMouseUpHandler(new MouseUpHandler() {
+	    public void onMouseUp(MouseUpEvent e) { releaseSwitchButton(key); }
+	});
+	b.addMouseOutHandler(new MouseOutHandler() {
+	    public void onMouseOut(MouseOutEvent e) { releaseSwitchButton(key); }
+	});
+	// touch: preventDefault so the browser doesn't also send mouse events afterwards
+	b.addTouchStartHandler(new TouchStartHandler() {
+	    public void onTouchStart(TouchStartEvent e) { e.preventDefault(); pressSwitchButton(key); }
+	});
+	b.addTouchEndHandler(new TouchEndHandler() {
+	    public void onTouchEnd(TouchEndEvent e) { e.preventDefault(); releaseSwitchButton(key); }
+	});
+	b.addTouchCancelHandler(new TouchCancelHandler() {
+	    public void onTouchCancel(TouchCancelEvent e) { releaseSwitchButton(key); }
+	});
+	return b;
+    }
+
+    void pressSwitchButton(String key) {
+	if (toggleSwitchesForKey(key, BUTTON_HELD))
+	    app.repaint();
+    }
+
+    // let go of momentary switches this button is holding down
+    void releaseSwitchButton(String key) {
+	boolean released = false;
+	for (int i = 0; i != elmList.size(); i++) {
+	    CircuitElm ce = elmList.get(i);
+	    if (ce instanceof SwitchElm) {
+		SwitchElm se = (SwitchElm) ce;
+		if (se.momentary && se.heldKeyCode == BUTTON_HELD && key.equals(se.keyShortcut)) {
+		    se.mouseUp();
+		    se.heldKeyCode = 0;
+		    released = true;
+		}
+	    }
+	}
+	if (released) {
+	    app.needAnalyze();
+	    app.repaint();
+	}
+    }
+
+    // keyCode of the most recent keydown; keypress doesn't give one, and momentary
+    // switches need it to know which key-up releases them
+    int lastKeyDownCode;
+
+    // toggle every switch whose key matches (a stored shortcut char, see KeyNames).
+    // Returns true if any did.
+    boolean toggleSwitchesForKey(String key, int keyCode) {
+	boolean toggled = false;
+	for (int i = 0; i != elmList.size(); i++) {
+	    CircuitElm ce = elmList.get(i);
+	    if (ce instanceof SwitchElm) {
+		SwitchElm se = (SwitchElm) ce;
+		if (se.keyShortcut != null && se.keyShortcut.equals(key)) {
+		    se.toggle();
+		    se.heldKeyCode = keyCode;
+		    if (!(se instanceof LogicInputElm))
+			app.needAnalyze();
+		    toggled = true;
+		}
+	    }
+	}
+	return toggled;
+    }
 
     private native boolean isRepeatEvent(NativeEvent evt) /*-{
 	return !!evt.repeat;
@@ -1134,16 +1278,18 @@ public class UIManager {
     	if (isReadOnly())
     	    return;
 
-    	// handle key-up for momentary switches with keyboard shortcuts
+    	// handle key-up for momentary switches with keyboard shortcuts. Matched by the
+    	// keyCode that pressed the switch, so it works for any key (punctuation, F-keys,
+    	// Ctrl-<key>) and even if the modifier is let go first.
     	if ((t & Event.ONKEYUP) != 0) {
-    	    String keyStr = String.valueOf((char)code).toLowerCase();
     	    boolean released = false;
     	    for (int i = 0; i != elmList.size(); i++) {
     		CircuitElm ce = elmList.get(i);
     		if (ce instanceof SwitchElm) {
     		    SwitchElm se = (SwitchElm) ce;
-    		    if (se.momentary && se.keyShortcut != null && se.keyShortcut.equals(keyStr)) {
+    		    if (se.momentary && se.heldKeyCode != 0 && se.heldKeyCode == code) {
     			se.mouseUp();
+    			se.heldKeyCode = 0;
     			released = true;
     		    }
     		}
@@ -1156,6 +1302,7 @@ public class UIManager {
     	}
 
     	if ((t & Event.ONKEYDOWN)!=0) {
+    		lastKeyDownCode = code;
     		if (code==KEY_BACKSPACE || code==KEY_DELETE) {
     		    if (app.scopeManager.scopeSelected != -1) {
     			app.scopeManager.scopes[app.scopeManager.scopeSelected].setElm(null);
@@ -1167,7 +1314,11 @@ public class UIManager {
     			e.cancel();
     		    }
     		}
-    		if (code==KEY_ESCAPE){
+    		// first Esc ends a chain of lines (staying in line mode), the next returns to Select
+    		if (code==KEY_ESCAPE && mouse.lineChain) {
+    			mouse.cancelLineChain();
+    			e.cancel();
+    		} else if (code==KEY_ESCAPE){
     			setMouseMode(MouseManager.MODE_SELECT);
     			mouseModeStr = "Select";
 			updateToolbar();
@@ -1204,8 +1355,13 @@ public class UIManager {
     		int placeholder = KeyNames.keyCodeToPlaceholder(code, e.getNativeEvent().getShiftKey(),
     			e.getNativeEvent().getCtrlKey(), e.getNativeEvent().getAltKey(), e.getNativeEvent().getMetaKey());
     		if (placeholder >= 0 && !isRepeatEvent(e.getNativeEvent())) {
+    		    // switch keys in this circuit take precedence over simulator shortcuts
     		    String c = app.shortcuts.get(placeholder);
-    		    if (c != null) {
+    		    if (toggleSwitchesForKey(String.valueOf((char) placeholder), code)) {
+    			e.cancel();
+    			app.repaint();
+    			customShortcutHandled = true;
+    		    } else if (c != null) {
     			if (c.startsWith("cmd:")) {
     			    String parts[] = c.split(":");
     			    app.commands.menuPerformed(parts[1], parts[2]);
@@ -1275,22 +1431,9 @@ public class UIManager {
     		// (cc==32 for spacebar is included so it can be assigned as a shortcut too;
     		// it falls back to the hardcoded temporary-select-mode behavior below if unassigned)
     		if (cc>=32 && cc<127) {
-    		    String keyStr = String.valueOf((char)cc).toLowerCase();
     		    boolean toggled = false;
-		    if (!isRepeatEvent(e.getNativeEvent())) {
-			for (int i = 0; i != elmList.size(); i++) {
-			    CircuitElm ce = elmList.get(i);
-			    if (ce instanceof SwitchElm) {
-				SwitchElm se = (SwitchElm) ce;
-				if (se.keyShortcut != null && se.keyShortcut.equals(keyStr)) {
-				    se.toggle();
-				    if (!(se instanceof LogicInputElm))
-					app.needAnalyze();
-				    toggled = true;
-				}
-			    }
-			}
-		    }
+		    if (!isRepeatEvent(e.getNativeEvent()))
+			toggled = toggleSwitchesForKey(String.valueOf((char)cc), lastKeyDownCode);
     		    if (toggled) {
     			e.cancel();
     			app.repaint();
@@ -1550,10 +1693,12 @@ public class UIManager {
         int i;
         app.shortcuts.clear();
 
+        // the element menu is built twice (right-click menu and Draw menu), so there are
+        // two items per class; clear all of them, skipping fixed labels like "(Alt-drag)"
         for (i = 0; i != mainMenuItems.size(); i++) {
             CheckboxMenuItem item = mainMenuItems.get(i);
             if (item.getShortcut().length() > 1)
-        		break;
+        		continue;
             item.setShortcut("");
         }
 
@@ -1570,7 +1715,6 @@ public class UIManager {
         		if (mainMenuItemNames.get(j) == className) {
         		    CheckboxMenuItem item = mainMenuItems.get(j);
         		    item.setShortcut(Character.toString((char)c));
-        		    break;
         		}
             }
         }
